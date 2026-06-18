@@ -41,7 +41,7 @@ export default async function SessionSummaryPage({ params }: PageProps) {
   const roots = sqRows.filter((r) => r.follow_up_depth === 0);
 
   return (
-    <div className="flex flex-col gap-6 px-4 py-6 max-w-2xl mx-auto w-full">
+    <div className="flex flex-col gap-6 px-4 py-6 max-w-4xl mx-auto w-full">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-muted-foreground capitalize">

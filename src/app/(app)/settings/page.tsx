@@ -18,7 +18,7 @@ export default async function SettingsPage() {
     aiProvider === "openai" ? process.env.OPENAI_MODEL : process.env.ANTHROPIC_MODEL;
 
   return (
-    <div className="flex flex-col gap-6 px-4 py-6 max-w-2xl mx-auto w-full">
+    <div className="flex flex-col gap-6 px-4 py-6 max-w-4xl mx-auto w-full">
       <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
 
       <Card>

@@ -130,7 +130,7 @@ export function InterviewScreen({
   }
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-4 max-w-2xl mx-auto w-full">
+    <div className="flex flex-col gap-4 px-4 py-4 max-w-4xl mx-auto w-full">
       <div className="flex items-center justify-between">
         <ThreadProgress
           rootCount={rootCount}

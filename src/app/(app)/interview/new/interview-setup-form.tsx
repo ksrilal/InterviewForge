@@ -92,7 +92,7 @@ export function InterviewSetupForm() {
   return (
     <form
       onSubmit={form.handleSubmit(onSubmit)}
-      className="flex flex-col gap-6 max-w-xl mx-auto px-4 py-6"
+      className="flex flex-col gap-6 max-w-4xl mx-auto px-4 py-6"
     >
       <div className="flex flex-col gap-3">
         <Label className="text-sm font-medium">Level</Label>

@@ -13,7 +13,7 @@ export default async function QuestionDetailPage({ params }: PageProps) {
   if (!question) notFound();
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6 max-w-2xl mx-auto w-full">
+    <div className="flex flex-col gap-4 px-4 py-6 max-w-4xl mx-auto w-full">
       <div className="flex items-center gap-2">
         <Badge variant="secondary">{question.category}</Badge>
         <Badge variant="outline" className="capitalize">

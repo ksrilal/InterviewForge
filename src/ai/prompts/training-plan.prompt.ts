@@ -1,8 +1,8 @@
 import { PERSONA_PREAMBLE } from "./interviewer.prompt";
-import type { InterviewLevel, SkillAxis, SessionVerdict } from "@/types/domain";
+import type { InterviewLevel, SessionVerdict } from "@/types/domain";
 
 export interface TrainingPlanPromptInput {
-  skillSnapshots: { axis: SkillAxis; rollingAverage: number; sampleCount: number }[];
+  skillSnapshots: { axis: string; rollingAverage: number; sampleCount: number }[];
   targetLevel: InterviewLevel | null;
   targetDate: string | null;
   recentVerdicts: SessionVerdict[];

@@ -1,9 +1,14 @@
-import { PERSONA_PREAMBLE } from "./interviewer.prompt";
-import type { Evaluation, InterviewLevel, InterviewType } from "@/types/domain";
+import { buildPersonaPreamble } from "./interviewer.prompt";
+import type { CompanyType, Evaluation, InterviewerPersonality, InterviewLevel, InterviewType } from "@/types/domain";
 
 export interface FollowUpPromptInput {
   level: InterviewLevel;
   interviewType: InterviewType;
+  // Set only for a user-created domain - when present, frames the role
+  // around the domain instead of the (otherwise-placeholder) interviewType,
+  // since interview_type's fixed categories don't meaningfully describe a
+  // custom domain's content.
+  domainName?: string;
   rootQuestionPrompt: string;
   expectedAnswerAreas: string[];
   followUpSeeds: string[];
@@ -11,6 +16,8 @@ export interface FollowUpPromptInput {
   evaluation: Evaluation;
   followUpCount: number;
   maxFollowUps: number;
+  personality?: InterviewerPersonality;
+  companyType?: CompanyType | null;
 }
 
 export function buildFollowUpPrompt(input: FollowUpPromptInput): {
@@ -20,6 +27,7 @@ export function buildFollowUpPrompt(input: FollowUpPromptInput): {
   const {
     level,
     interviewType,
+    domainName,
     rootQuestionPrompt,
     expectedAnswerAreas,
     followUpSeeds,
@@ -27,11 +35,17 @@ export function buildFollowUpPrompt(input: FollowUpPromptInput): {
     evaluation,
     followUpCount,
     maxFollowUps,
+    personality,
+    companyType,
   } = input;
 
-  const system = `${PERSONA_PREAMBLE}
+  const roleFraming = domainName
+    ? `a ${level} candidate in the "${domainName}" domain`
+    : `a ${level} ${interviewType} role`;
 
-You are interviewing a candidate for a ${level} ${interviewType} role. You must decide what
+  const system = `${buildPersonaPreamble(personality, companyType)}
+
+You are interviewing a candidate for ${roleFraming}. You must decide what
 happens next in this line of questioning.`;
 
   const user = `Original question: "${rootQuestionPrompt}"

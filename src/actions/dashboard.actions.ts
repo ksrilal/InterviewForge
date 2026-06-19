@@ -1,15 +1,17 @@
 "use server";
 
-import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAuth } from "@/lib/auth/guard";
+import { requireUser } from "@/lib/auth/guard";
 import { getLatestSkillSnapshots } from "./radar.actions";
 import { computeWeightedReadiness } from "@/lib/scoring/readiness";
-import type { SessionRow } from "@/lib/supabase/types";
+import type { DomainRow, SessionRow } from "@/lib/supabase/types";
 
 export interface DashboardData {
   readinessScore: number;
   readinessLevel: string;
   readinessStatus: "pass" | "borderline" | "fail" | "no-data";
+  // Single page-level flag rather than per-row - recentSessions is now
+  // domain-scoped, so every row already shares the same domain.
+  isCustomDomain: boolean;
   recentSessions: {
     id: string;
     level: string;
@@ -19,13 +21,24 @@ export interface DashboardData {
   }[];
 }
 
-export async function getDashboardData(): Promise<DashboardData> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+// Domain-scoped: the skill radar/readiness score behind this only makes
+// sense within one domain at a time (see radar.actions.ts), so "recent
+// activity" on the dashboard follows the same selected domain rather than
+// mixing in unrelated domains' sessions.
+export async function getDashboardData(domainId: string): Promise<DashboardData> {
+  const { supabase } = await requireUser();
+
+  const { data: domain } = await supabase
+    .from("domains")
+    .select("owner_user_id")
+    .eq("id", domainId)
+    .single();
+  const isCustomDomain = !!(domain as Pick<DomainRow, "owner_user_id"> | null)?.owner_user_id;
 
   const { data: sessions } = await supabase
     .from("sessions")
     .select("*")
+    .eq("domain_id", domainId)
     .eq("status", "completed")
     .order("started_at", { ascending: false })
     .limit(5);
@@ -33,7 +46,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   const sessionRows = (sessions ?? []) as SessionRow[];
   const latestLevel = sessionRows[0]?.level ?? "senior";
 
-  const snapshots = await getLatestSkillSnapshots();
+  const snapshots = await getLatestSkillSnapshots(domainId);
   const hasAnyData = snapshots.some((s) => s.sampleCount > 0);
   const readinessScore = hasAnyData ? computeWeightedReadiness(snapshots, latestLevel) : 0;
 
@@ -48,6 +61,7 @@ export async function getDashboardData(): Promise<DashboardData> {
     readinessScore,
     readinessLevel: latestLevel,
     readinessStatus,
+    isCustomDomain,
     recentSessions: sessionRows.map((s) => ({
       id: s.id,
       level: s.level,

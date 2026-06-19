@@ -1,5 +1,5 @@
-import { PERSONA_PREAMBLE, SCORE_BAND_GUIDANCE } from "./interviewer.prompt";
-import type { Question } from "@/types/domain";
+import { buildPersonaPreamble, SCORE_BAND_GUIDANCE } from "./interviewer.prompt";
+import type { CompanyType, InterviewerPersonality, Question } from "@/types/domain";
 
 export interface EvaluationPromptInput {
   question: Pick<
@@ -7,15 +7,17 @@ export interface EvaluationPromptInput {
     "prompt" | "questionType" | "difficulty" | "level" | "scoringRubric" | "commonMistakes"
   >;
   answerText: string;
+  personality?: InterviewerPersonality;
+  companyType?: CompanyType | null;
 }
 
 export function buildEvaluationPrompt(input: EvaluationPromptInput): {
   system: string;
   user: string;
 } {
-  const { question, answerText } = input;
+  const { question, answerText, personality, companyType } = input;
 
-  const system = `${PERSONA_PREAMBLE}
+  const system = `${buildPersonaPreamble(personality, companyType)}
 
 You are scoring a candidate's interview answer. Be exacting - most real interviewers overrate
 politely; you must not. Use the rubric and score bands below verbatim, do not invent your own

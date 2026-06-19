@@ -1,7 +1,6 @@
 "use server";
 
-import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAuth } from "@/lib/auth/guard";
+import { requireUser } from "@/lib/auth/guard";
 
 export interface ResetDataResult {
   ok: boolean;
@@ -14,8 +13,7 @@ export interface ResetDataResult {
 // deleting sessions first clears most of the tree; skill_snapshots and
 // training_plans have no FK back to sessions and need separate deletes.
 export async function resetAllData(): Promise<ResetDataResult> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+  const { supabase } = await requireUser();
 
   const { error: sessionsError } = await supabase
     .from("sessions")

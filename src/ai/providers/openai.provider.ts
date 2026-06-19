@@ -1,8 +1,10 @@
 import OpenAI from "openai";
 import type {
   AIProvider,
+  AIUsage,
   DecideFollowUpInput,
   EvaluateAnswerInput,
+  ExtractKnowledgeInput,
   GenerateQuestionInput,
   GenerateTrainingPlanInput,
 } from "../provider";
@@ -10,19 +12,29 @@ import { buildEvaluationPrompt } from "../prompts/evaluation.prompt";
 import { buildFollowUpPrompt } from "../prompts/followup.prompt";
 import { buildQuestionGenerationPrompt } from "../prompts/question-generation.prompt";
 import { buildTrainingPlanPrompt } from "../prompts/training-plan.prompt";
+import { buildKnowledgeExtractionPrompt } from "../prompts/knowledge-extraction.prompt";
 import {
   EvaluationSchema,
   FollowUpDecisionSchema,
   GeneratedQuestionSchema,
+  KnowledgeExtractionSchema,
+  FreeformKnowledgeExtractionSchema,
   TrainingPlanSchema,
 } from "../schemas/ai-response.schemas";
 import { AIResponseValidationError, parseAndValidate } from "../parse-json-response";
-import type { Evaluation, FollowUpDecision, GeneratedQuestion, TrainingPlan } from "@/types/domain";
+import type {
+  Evaluation,
+  FollowUpDecision,
+  GeneratedQuestion,
+  KnowledgeExtractionResult,
+  TrainingPlan,
+} from "@/types/domain";
 
 export class OpenAIProvider implements AIProvider {
   readonly name = "openai" as const;
   readonly model: string;
   private client: OpenAI;
+  private lastUsage: AIUsage | null = null;
 
   constructor() {
     const apiKey = process.env.OPENAI_API_KEY;
@@ -31,6 +43,10 @@ export class OpenAIProvider implements AIProvider {
     }
     this.model = process.env.OPENAI_MODEL ?? "gpt-4.1";
     this.client = new OpenAI({ apiKey });
+  }
+
+  getLastUsage(): AIUsage | null {
+    return this.lastUsage;
   }
 
   private async call(system: string, user: string): Promise<string> {
@@ -42,6 +58,11 @@ export class OpenAIProvider implements AIProvider {
         { role: "user", content: user },
       ],
     });
+
+    this.lastUsage = {
+      inputTokens: (this.lastUsage?.inputTokens ?? 0) + (response.usage?.prompt_tokens ?? 0),
+      outputTokens: (this.lastUsage?.outputTokens ?? 0) + (response.usage?.completion_tokens ?? 0),
+    };
 
     const content = response.choices[0]?.message?.content;
     if (!content) {
@@ -55,6 +76,7 @@ export class OpenAIProvider implements AIProvider {
     user: string,
     schema: import("zod").ZodSchema<T>
   ): Promise<T> {
+    this.lastUsage = null;
     const firstAttempt = await this.call(system, user);
     try {
       return parseAndValidate(firstAttempt, schema);
@@ -91,5 +113,11 @@ Respond again with ONLY the corrected JSON object, no markdown, no commentary.`;
   async generateTrainingPlan(input: GenerateTrainingPlanInput): Promise<TrainingPlan> {
     const { system, user } = buildTrainingPlanPrompt(input);
     return this.callAndValidate(system, user, TrainingPlanSchema);
+  }
+
+  async extractKnowledge(input: ExtractKnowledgeInput): Promise<KnowledgeExtractionResult> {
+    const { system, user } = buildKnowledgeExtractionPrompt(input);
+    const schema = input.isCustomDomain ? FreeformKnowledgeExtractionSchema : KnowledgeExtractionSchema;
+    return this.callAndValidate(system, user, schema);
   }
 }

@@ -46,6 +46,17 @@ export type SkillAxis =
   | "communication"
   | "ai";
 
+export type InterviewerPersonality =
+  | "supportive_mentor"
+  | "professional"
+  | "strict_senior"
+  | "tough_reviewer"
+  | "faang_interviewer";
+
+export type CompanyType = "startup" | "enterprise" | "product" | "faang" | "remote_first";
+
+export type UserRole = "candidate" | "admin";
+
 export type QuestionRow = {
   id: string;
   category: string;
@@ -53,16 +64,88 @@ export type QuestionRow = {
   question_type: QuestionType;
   difficulty: number;
   level: InterviewLevel;
-  interview_types: InterviewType[];
-  skill_axes: SkillAxis[];
+  // string[], not InterviewType[] - the column is still the Postgres enum
+  // array (Postgres itself rejects out-of-set values), but custom-domain
+  // questions store this empty since the SE categorization doesn't apply.
+  interview_types: string[];
+  // Free text - SkillAxis's fixed union only applies to the global
+  // Software Engineering domain. Custom domains get AI-invented labels
+  // (e.g. "Space Planning") that aren't part of that closed set.
+  skill_axes: string[];
   prompt: string;
   expected_answer_areas: string[];
   common_mistakes: string[];
   follow_up_seeds: string[];
   scoring_rubric: Record<string, string>;
   source: "seed" | "ai_generated" | "manual";
+  // null = shared/global question (seed or AI-generated into the common
+  // bank); set = privately owned by the user who generated/authored it.
+  owner_user_id: string | null;
+  domain_id: string;
   created_at: string;
   updated_at: string;
+};
+
+export type ProfileRow = {
+  id: string;
+  email: string | null;
+  display_name: string | null;
+  target_level: InterviewLevel | null;
+  target_date: string | null;
+  role: UserRole;
+  // Free trial quota before AI access requires admin approval.
+  ai_trial_limit: number;
+  // Admin-granted full access - bypasses the trial limit once true.
+  ai_access_enabled: boolean;
+  // Lifetime count of AI requests made, only ever incremented via the
+  // increment_ai_request_count() RPC (see migration 0008) - not directly
+  // writable from a user's own session.
+  ai_request_count: number;
+  is_disabled: boolean;
+  created_at: string;
+};
+
+export type AIUsageEventRow = {
+  id: string;
+  user_id: string;
+  provider: "anthropic" | "openai";
+  model: string;
+  input_tokens: number;
+  output_tokens: number;
+  estimated_cost_usd: number;
+  created_at: string;
+};
+
+export type DomainRow = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  is_active: boolean;
+  // null = global/seed domain (e.g. "Software Engineering"); set = private
+  // to the user who created it from their own uploaded content.
+  owner_user_id: string | null;
+};
+
+export type KnowledgeSourceStatus = "pending" | "processing" | "completed" | "failed";
+
+export type KnowledgeSourceRow = {
+  id: string;
+  user_id: string;
+  domain_id: string;
+  source_type: "manual" | "markdown" | "pdf";
+  title: string;
+  storage_path: string | null;
+  extracted_text: string | null;
+  content_hash: string | null;
+  status: KnowledgeSourceStatus;
+  error: string | null;
+  created_at: string;
+};
+
+export type KnowledgeSourceQuestionRow = {
+  source_id: string;
+  question_id: string;
 };
 
 export type SessionSummary = {
@@ -74,11 +157,15 @@ export type SessionSummary = {
 
 export type SessionRow = {
   id: string;
+  user_id: string;
+  domain_id: string;
   mode: SessionMode;
   level: InterviewLevel;
   interview_type: InterviewType;
   status: SessionStatus;
   time_limit_seconds: number | null;
+  interviewer_personality: InterviewerPersonality;
+  company_type: CompanyType | null;
   started_at: string;
   ended_at: string | null;
   overall_score: number | null;
@@ -129,8 +216,10 @@ export type AnswerRow = {
 
 export type SkillScoreEventRow = {
   id: string;
+  user_id: string;
+  domain_id: string;
   answer_id: string;
-  skill_axis: SkillAxis;
+  skill_axis: string;
   score: number;
   level: InterviewLevel;
   occurred_at: string;
@@ -138,7 +227,9 @@ export type SkillScoreEventRow = {
 
 export type SkillSnapshotRow = {
   id: string;
-  skill_axis: SkillAxis;
+  user_id: string;
+  domain_id: string;
+  skill_axis: string;
   rolling_average: number;
   sample_count: number;
   snapshot_at: string;
@@ -146,6 +237,7 @@ export type SkillSnapshotRow = {
 
 export type TrainingPlanRow = {
   id: string;
+  user_id: string;
   generated_at: string;
   target_level: InterviewLevel | null;
   target_date: string | null;
@@ -177,8 +269,18 @@ export type Database = {
       skill_score_events: Table<SkillScoreEventRow>;
       skill_snapshots: Table<SkillSnapshotRow>;
       training_plans: Table<TrainingPlanRow>;
+      profiles: Table<ProfileRow>;
+      domains: Table<DomainRow>;
+      knowledge_sources: Table<KnowledgeSourceRow>;
+      knowledge_source_questions: Table<KnowledgeSourceQuestionRow>;
+      ai_usage_events: Table<AIUsageEventRow>;
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      increment_ai_request_count: {
+        Args: Record<string, never>;
+        Returns: void;
+      };
+    };
   };
 };

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -173,7 +174,7 @@ export function InterviewScreen({
               <DialogTrigger render={<Button variant="outline" size="lg" />}>
                 End Session
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent closeButtonDisabled={isPending}>
                 <DialogHeader>
                   <DialogTitle>End this session?</DialogTitle>
                   <DialogDescription>
@@ -181,6 +182,9 @@ export function InterviewScreen({
                   </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
+                  <DialogClose render={<Button variant="outline" disabled={isPending} />}>
+                    Cancel
+                  </DialogClose>
                   <Button onClick={handleEnd} disabled={isPending}>
                     End Session
                   </Button>

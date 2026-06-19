@@ -1,5 +1,5 @@
-import { PERSONA_PREAMBLE } from "./interviewer.prompt";
-import type { InterviewLevel, InterviewType, QuestionType } from "@/types/domain";
+import { buildPersonaPreamble } from "./interviewer.prompt";
+import type { CompanyType, InterviewerPersonality, InterviewLevel, InterviewType, QuestionType } from "@/types/domain";
 
 export interface QuestionGenerationPromptInput {
   level: InterviewLevel;
@@ -7,15 +7,17 @@ export interface QuestionGenerationPromptInput {
   questionType: QuestionType;
   topic?: string;
   recentPromptTitles: string[];
+  personality?: InterviewerPersonality;
+  companyType?: CompanyType | null;
 }
 
 export function buildQuestionGenerationPrompt(input: QuestionGenerationPromptInput): {
   system: string;
   user: string;
 } {
-  const { level, interviewType, questionType, topic, recentPromptTitles } = input;
+  const { level, interviewType, questionType, topic, recentPromptTitles, personality, companyType } = input;
 
-  const system = `${PERSONA_PREAMBLE}
+  const system = `${buildPersonaPreamble(personality, companyType)}
 
 Generate ONE new interview question matching the requested parameters exactly.`;
 

@@ -2,13 +2,13 @@
 
 ## 1. Purpose
 
-A single-user web application that answers: **"Am I ready to pass a Senior Software Engineer interview today?"**
+A web application that answers: **"Am I ready to pass a Senior Software Engineer interview today?"** Originally built single-user, now multi-tenant (see §2) — the product scope and module list below are otherwise unchanged by that pivot.
 
 It is a training tool, not a course platform. Every feature must either (a) simulate a real interview moment, (b) evaluate a real interview answer, or (c) tell the user what to fix before their next real interview. Anything else is out of scope.
 
 ## 2. User
 
-Exactly one user. No sign-up, no multi-tenancy, no roles. The "user" is whoever holds the credentials in `AUTH_USERNAME` / `AUTH_PASSWORD_HASH` env vars on the deployed Vercel project.
+**v2 update:** multi-tenant via Supabase Auth. Sign-in supports Google OAuth and email/password (with email confirmation, per Supabase project defaults) — both create the same `profiles` row via an `auth.users` insert trigger, and both are first-class, not a fallback. Each account gets fully isolated data via Postgres RLS (`auth.uid() = user_id`) — see `supabase/migrations/0004_multi_tenant_foundation.sql`. Anyone who signs up gets their own empty workspace; there is no invite/approval step (acceptable since there's no shared data between accounts to protect against).
 
 ## 3. Problem statement
 
@@ -25,11 +25,12 @@ Generic interview prep (LeetCode, course videos) trains isolated skills but neve
 ## 5. Non-goals (explicitly excluded from MVP, see [10-mvp-roadmap.md](10-mvp-roadmap.md))
 
 - Voice/video interviews (text-only for MVP).
-- Multi-user accounts, teams, sharing, leaderboards.
+- Teams, shared workspaces, leaderboards, or any cross-account visibility. (Multi-user *accounts* with isolated data are now in scope — see §2 — but accounts never see or affect each other.)
 - Live coding/code execution sandbox (questions can *reference* code, but no code runner).
 - Mobile native app — mobile-friendly responsive web only.
 - Content marketplace, community-submitted questions.
 - Real-time collaborative anything.
+- Additional domains beyond Software Engineering (QA, HR, DevOps, Data Engineering) — `domains`/`domain_id` exist as a schema scaffold (`supabase/migrations/0004_multi_tenant_foundation.sql`) so this isn't a rewrite later, but no other domain has real question content yet.
 
 ## 6. Functional requirements by module
 
@@ -45,6 +46,7 @@ Generic interview prep (LeetCode, course videos) trains isolated skills but neve
 - Each question has: category, topic, difficulty, interview level, expected answer areas, follow-up questions, common mistakes, scoring rubric, type (theory/scenario/debugging/architecture/system-design/behavioral).
 - Seeded with a curated static set (see [02-database-schema.md](02-database-schema.md) seed strategy) covering all 15 knowledge areas in the brief.
 - AI can generate net-new questions on demand constrained to the same schema, which get persisted back into the bank (so the bank grows from usage).
+- **v2:** questions carry `owner_user_id` (null = shared/global bank, visible to everyone; set = private to the generating account) and `domain_id` (currently always Software Engineering). AI-generated questions today still default to the shared global bank — private-question generation isn't wired into the UI yet, the column just exists so it can be without a migration later.
 
 ### Module 3 — AI Evaluation Engine
 - Input: question + rubric + user's answer + conversation history (for follow-up context).
@@ -77,9 +79,9 @@ Generic interview prep (LeetCode, course videos) trains isolated skills but neve
 - **No data loss**: every user answer is saved to DB before the AI call is made (optimistic write), so a crashed AI call never loses input.
 - **Cost awareness**: this is a personal project — avoid unbounded AI spend. Follow-up cap (3 per thread), session question cap, and a visible token/cost estimate are part of MVP, not a later add-on.
 
-## 8. Success metrics (personal, not business)
+## 8. Success metrics (per account, not business)
 
-Since there's one user, "success" is self-assessed:
+"Success" is self-assessed per account, same as the original single-user design — multi-tenancy isolates accounts, it doesn't introduce cross-account metrics, growth loops, or admin dashboards:
 - Skill Radar shows upward trend over weeks.
 - Mock interview verdict moves from Borderline → Pass for target level.
 - Time-to-answer and follow-up depth handled improves (fewer "I don't know" / low-depth scores on repeat topics).
@@ -89,6 +91,6 @@ Since there's one user, "success" is self-assessed:
 | Risk | Mitigation |
 |---|---|
 | AI evaluation is inconsistent/lenient | Rubric is embedded in every prompt verbatim per question, not paraphrased; scoring anchored with explicit 0-100 band descriptions in the prompt (see [06-ai-prompt-architecture.md](06-ai-prompt-architecture.md)) |
-| Single-user auth is too weak | Acceptable for personal project; documented explicitly as a non-goal to harden further. No PII beyond the user's own prep data. |
+| RLS misconfiguration leaks data across accounts | Every account-owned table (`sessions`, `training_plans`, `skill_snapshots`, `skill_score_events`, and the join-based policies on `session_questions`/`answers`) is scoped by `auth.uid() = user_id` in `0004_multi_tenant_foundation.sql`, verified end-to-end with a headless-browser pass (redirect-when-logged-out, sign-up/sign-in error paths) before being treated as done |
 | AI cost runs away | Follow-up caps, session caps, model selection via env (can default to cheaper models), no background/idle AI calls |
 | Scope creep into "learning platform" | Every new feature request gets checked against the Module list above; if it doesn't fit, it's out |

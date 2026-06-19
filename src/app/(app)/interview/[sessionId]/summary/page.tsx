@@ -4,6 +4,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { getDomainLabels } from "@/lib/domain-label";
 import type { AnswerRow, SessionQuestionRow, SessionRow } from "@/lib/supabase/types";
 
 interface PageProps {
@@ -18,11 +19,14 @@ const VERDICT_STYLES: Record<string, string> = {
 
 export default async function SessionSummaryPage({ params }: PageProps) {
   const { sessionId } = await params;
-  const supabase = getSupabaseServerClient();
+  const supabase = await getSupabaseServerClient();
 
   const { data: session } = await supabase.from("sessions").select("*").eq("id", sessionId).single();
   if (!session) notFound();
   const sessionRow = session as SessionRow;
+
+  const domainLabels = await getDomainLabels(supabase, [sessionRow.domain_id]);
+  const domain = domainLabels.get(sessionRow.domain_id);
 
   const { data: sessionQuestions } = await supabase
     .from("session_questions")
@@ -45,7 +49,9 @@ export default async function SessionSummaryPage({ params }: PageProps) {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-muted-foreground capitalize">
-            {sessionRow.level.replace("_", " ")} &middot; {sessionRow.interview_type.replace("_", " ")} &middot;{" "}
+            {sessionRow.level.replace("_", " ")} &middot;{" "}
+            {domain?.name ?? sessionRow.interview_type.replace("_", " ")}
+            {domain && !domain.isCustom ? ` · ${sessionRow.interview_type.replace("_", " ")}` : ""} &middot;{" "}
             {sessionRow.mode === "practice" ? "Practice" : sessionRow.mode.replace("mock_", "") + "m Mock"}
           </p>
           <div className="flex items-baseline gap-2 mt-1">

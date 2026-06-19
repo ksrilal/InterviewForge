@@ -14,7 +14,7 @@ export default async function InterviewSessionPage({ params }: PageProps) {
   const context = await getSessionContext(sessionId);
   if (!context) notFound();
 
-  const supabase = getSupabaseServerClient();
+  const supabase = await getSupabaseServerClient();
   const { data: latestSq } = await supabase
     .from("session_questions")
     .select("*")

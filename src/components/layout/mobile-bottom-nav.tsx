@@ -2,16 +2,21 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_ITEMS } from "@/lib/nav-items";
+import { NAV_ITEMS, ADMIN_NAV_ITEM } from "@/lib/nav-items";
 import { cn } from "@/lib/utils";
 
-export function MobileBottomNav() {
+interface MobileBottomNavProps {
+  isAdmin: boolean;
+}
+
+export function MobileBottomNav({ isAdmin }: MobileBottomNavProps) {
   const pathname = usePathname();
+  const items = isAdmin ? [...NAV_ITEMS, ADMIN_NAV_ITEM] : NAV_ITEMS;
 
   return (
     <nav className="md:hidden fixed bottom-0 inset-x-0 z-50 border-t border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
       <ul className="flex items-stretch justify-between">
-        {NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const isActive = pathname.startsWith(item.href.split("?")[0].split("/").slice(0, 2).join("/"));
           const Icon = item.icon;
           return (

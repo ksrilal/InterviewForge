@@ -1,10 +1,11 @@
 "use server";
 
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAuth } from "@/lib/auth/guard";
+import { requireUser } from "@/lib/auth/guard";
 import { getAIProvider, getFallbackAIProvider } from "@/ai/provider";
+import { checkAIQuota, recordAIUsage } from "@/lib/ai/usage-gate";
 import { mapAnswerRowToEvaluation, mapQuestionRow } from "@/lib/mappers";
-import { pickRootQuestion, pickQuestionByTypeMix } from "./question.actions";
+import { pickRootQuestion, pickQuestionByTypeMix, pickQuestionInDomain } from "./question.actions";
 import { MAX_FOLLOW_UPS_PER_THREAD, MOCK_MODE_CONFIG } from "@/lib/scoring/mock-templates";
 import type { ActionResult, Evaluation } from "@/types/domain";
 import type {
@@ -31,8 +32,7 @@ export async function submitAnswer(
   sessionQuestionId: string,
   answerText: string
 ): Promise<ActionResult<SubmitAnswerResult>> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+  const { supabase } = await requireUser();
 
   const { data: answer, error: insertError } = await supabase
     .from("answers")
@@ -62,8 +62,7 @@ export async function submitAnswer(
 // Separated so the retry flow (Flow 8 in docs/08-user-flows.md) can re-run
 // evaluation on an already-saved answer without re-submitting the text.
 export async function evaluateAnswer(answerId: string): Promise<ActionResult<Evaluation>> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+  const { supabase, user } = await requireUser();
 
   const { data: answer, error: answerError } = await supabase
     .from("answers")
@@ -85,6 +84,16 @@ export async function evaluateAnswer(answerId: string): Promise<ActionResult<Eva
   }
   const sq = sessionQuestion as SessionQuestionRow;
 
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("level, interviewer_personality, company_type")
+    .eq("id", sq.session_id)
+    .single();
+  const sessionRow = session as Pick<
+    SessionRow,
+    "level" | "interviewer_personality" | "company_type"
+  > | null;
+
   let questionContext: Pick<
     QuestionRow,
     "prompt" | "question_type" | "difficulty" | "level" | "scoring_rubric" | "common_mistakes"
@@ -101,16 +110,11 @@ export async function evaluateAnswer(answerId: string): Promise<ActionResult<Eva
   } else {
     // AI-generated follow-up with no bank row - reconstruct minimal context
     // from the session itself for evaluation purposes.
-    const { data: session } = await supabase
-      .from("sessions")
-      .select("level")
-      .eq("id", await getSessionIdForSessionQuestion(sq.id))
-      .single();
     questionContext = {
       prompt: sq.prompt_text,
       question_type: "theory",
       difficulty: 3,
-      level: (session as { level: SessionRow["level"] } | null)?.level ?? "mid",
+      level: sessionRow?.level ?? "mid",
       scoring_rubric: {
         accuracy: "Correctly addresses the follow-up question asked",
         depth: "Goes beyond surface-level restatement",
@@ -133,12 +137,25 @@ export async function evaluateAnswer(answerId: string): Promise<ActionResult<Eva
       commonMistakes: questionContext.common_mistakes,
     },
     answerText: answerRow.answer_text,
+    personality: sessionRow?.interviewer_personality,
+    companyType: sessionRow?.company_type,
   };
+
+  try {
+    await checkAIQuota(user.id);
+  } catch (err) {
+    await supabase
+      .from("answers")
+      .update({ evaluation_error: (err as Error).message })
+      .eq("id", answerId);
+    return { ok: false, error: (err as Error).message };
+  }
 
   let evaluation: Evaluation;
   let usedProvider = getAIProvider();
   try {
     evaluation = await usedProvider.evaluateAnswer(evaluationInput);
+    await recordAIUsage(user.id, usedProvider);
   } catch (primaryError) {
     const fallback = getFallbackAIProvider();
     if (!fallback) {
@@ -151,6 +168,7 @@ export async function evaluateAnswer(answerId: string): Promise<ActionResult<Eva
     try {
       usedProvider = fallback;
       evaluation = await fallback.evaluateAnswer(evaluationInput);
+      await recordAIUsage(user.id, usedProvider);
     } catch (fallbackError) {
       await supabase
         .from("answers")
@@ -189,16 +207,6 @@ export async function evaluateAnswer(answerId: string): Promise<ActionResult<Eva
   return { ok: true, data: evaluation };
 }
 
-async function getSessionIdForSessionQuestion(sessionQuestionId: string): Promise<string> {
-  const supabase = getSupabaseServerClient();
-  const { data } = await supabase
-    .from("session_questions")
-    .select("session_id")
-    .eq("id", sessionQuestionId)
-    .single();
-  return (data as { session_id: string } | null)?.session_id ?? "";
-}
-
 // The adaptive follow-up engine (docs/01-prd.md Module 4): decides whether to
 // probe deeper on the same topic, pivot to a new one, or end the session.
 // The follow-up cap is enforced here in code, not just via the AI prompt.
@@ -207,7 +215,7 @@ async function advanceSession(
   answerText: string,
   evaluation: Evaluation
 ): Promise<NextStep> {
-  const supabase = getSupabaseServerClient();
+  const supabase = await getSupabaseServerClient();
 
   const { data: sq } = await supabase
     .from("session_questions")
@@ -222,6 +230,16 @@ async function advanceSession(
     .eq("id", sessionQuestion.session_id)
     .single();
   const sessionRow = session as SessionRow;
+
+  // interview_type's fixed categories only meaningfully describe the global
+  // Software Engineering domain - a custom domain's questions are scoped by
+  // domain_id + level alone (see startSession).
+  const { data: domain } = await supabase
+    .from("domains")
+    .select("name, owner_user_id")
+    .eq("id", sessionRow.domain_id)
+    .single();
+  const isCustomDomain = !!domain?.owner_user_id;
 
   const rootSessionQuestionId = await findThreadRoot(sessionQuestion);
   const { data: threadQuestions } = await supabase
@@ -242,7 +260,7 @@ async function advanceSession(
   if (followUpCount >= MAX_FOLLOW_UPS_PER_THREAD) {
     return reachedQuestionCap
       ? { type: "SESSION_COMPLETE" }
-      : await moveToNewTopic(sessionRow, rootCount ?? 0);
+      : await moveToNewTopic(sessionRow, rootCount ?? 0, isCustomDomain);
   }
 
   let rootQuestionPrompt = sessionQuestion.prompt_text;
@@ -266,9 +284,11 @@ async function advanceSession(
   const provider = getAIProvider();
   let decision;
   try {
+    await checkAIQuota(sessionRow.user_id);
     decision = await provider.decideFollowUp({
       level: sessionRow.level,
       interviewType: sessionRow.interview_type,
+      domainName: isCustomDomain ? domain?.name : undefined,
       rootQuestionPrompt,
       expectedAnswerAreas,
       followUpSeeds,
@@ -276,10 +296,14 @@ async function advanceSession(
       evaluation,
       followUpCount,
       maxFollowUps: MAX_FOLLOW_UPS_PER_THREAD,
+      personality: sessionRow.interviewer_personality,
+      companyType: sessionRow.company_type,
     });
+    await recordAIUsage(sessionRow.user_id, provider);
   } catch {
-    // If the follow-up decision call fails, fail safe to NEW_TOPIC rather
-    // than blocking the user from continuing the session.
+    // If the follow-up decision call fails (including no AI quota left),
+    // fail safe to NEW_TOPIC rather than blocking the user from continuing
+    // the session - this one is a nice-to-have, unlike evaluateAnswer.
     decision = { action: "NEW_TOPIC" as const };
   }
 
@@ -315,13 +339,13 @@ async function advanceSession(
   if (reachedQuestionCap) {
     return { type: "SESSION_COMPLETE" };
   }
-  return await moveToNewTopic(sessionRow, rootCount ?? 0);
+  return await moveToNewTopic(sessionRow, rootCount ?? 0, isCustomDomain);
 }
 
 async function findThreadRoot(sq: SessionQuestionRow): Promise<string> {
   if (!sq.parent_session_question_id) return sq.id;
 
-  const supabase = getSupabaseServerClient();
+  const supabase = await getSupabaseServerClient();
   let currentId = sq.parent_session_question_id;
   for (let i = 0; i < MAX_FOLLOW_UPS_PER_THREAD + 1; i++) {
     const { data } = await supabase
@@ -336,8 +360,12 @@ async function findThreadRoot(sq: SessionQuestionRow): Promise<string> {
   return currentId;
 }
 
-async function moveToNewTopic(sessionRow: SessionRow, currentRootCount: number): Promise<NextStep> {
-  const supabase = getSupabaseServerClient();
+async function moveToNewTopic(
+  sessionRow: SessionRow,
+  currentRootCount: number,
+  isCustomDomain: boolean
+): Promise<NextStep> {
+  const supabase = await getSupabaseServerClient();
   const config = MOCK_MODE_CONFIG[sessionRow.mode];
 
   const { data: existingSessionQuestions } = await supabase
@@ -350,8 +378,10 @@ async function moveToNewTopic(sessionRow: SessionRow, currentRootCount: number):
 
   const typeMixForNext = config.typeSequence[currentRootCount];
   const question = typeMixForNext
-    ? await pickQuestionByTypeMix(sessionRow.level, [typeMixForNext], excludeIds)
-    : await pickRootQuestion(sessionRow.level, sessionRow.interview_type, excludeIds);
+    ? await pickQuestionByTypeMix(sessionRow.domain_id, sessionRow.level, [typeMixForNext], excludeIds)
+    : isCustomDomain
+      ? await pickQuestionInDomain(sessionRow.domain_id, sessionRow.level, excludeIds)
+      : await pickRootQuestion(sessionRow.domain_id, sessionRow.level, sessionRow.interview_type, excludeIds);
 
   if (!question) {
     return { type: "SESSION_COMPLETE" };
@@ -379,8 +409,7 @@ async function moveToNewTopic(sessionRow: SessionRow, currentRootCount: number):
 }
 
 export async function getEvaluationForAnswer(sessionQuestionId: string): Promise<Evaluation | null> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+  const { supabase } = await requireUser();
   const { data } = await supabase
     .from("answers")
     .select("*")

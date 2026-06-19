@@ -5,10 +5,12 @@ import { SkillRadarChart } from "@/components/radar/skill-radar-chart";
 import { SkillTrendChart } from "@/components/radar/skill-trend-chart";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getSkillTrend } from "@/actions/radar.actions";
-import type { SkillAxis } from "@/types/domain";
 import type { SkillSnapshotSummary } from "@/actions/radar.actions";
 
-const AXIS_LABELS: Record<SkillAxis, string> = {
+// Known short codes for the global Software Engineering domain get a nicer
+// label; custom domains' AI-invented axes (e.g. "Space Planning") are
+// already human-readable and render as-is.
+const AXIS_LABELS: Record<string, string> = {
   architecture: "Architecture",
   system_design: "System Design",
   databases: "Databases",
@@ -21,32 +23,46 @@ const AXIS_LABELS: Record<SkillAxis, string> = {
   ai: "AI",
 };
 
-interface RadarClientProps {
-  snapshots: SkillSnapshotSummary[];
+function axisLabel(axis: string): string {
+  return AXIS_LABELS[axis] ?? axis;
 }
 
-export function RadarClient({ snapshots }: RadarClientProps) {
-  const [selectedAxis, setSelectedAxis] = useState<SkillAxis>(snapshots[0]?.axis ?? "backend");
+interface RadarClientProps {
+  snapshots: SkillSnapshotSummary[];
+  domainId: string;
+}
+
+export function RadarClient({ snapshots, domainId }: RadarClientProps) {
+  const [selectedAxis, setSelectedAxis] = useState<string | undefined>(snapshots[0]?.axis);
   const [trend, setTrend] = useState<{ date: string; value: number }[]>([]);
   const [, startTransition] = useTransition();
 
   useEffect(() => {
+    if (!selectedAxis) return;
     startTransition(async () => {
-      const data = await getSkillTrend(selectedAxis);
+      const data = await getSkillTrend(selectedAxis, domainId);
       setTrend(data);
     });
-  }, [selectedAxis]);
+  }, [selectedAxis, domainId]);
+
+  if (snapshots.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground py-8 text-center">
+        No skill data yet for this domain - complete a session to see your radar.
+      </p>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
       <SkillRadarChart data={snapshots.map((s) => ({ axis: s.axis, rollingAverage: s.rollingAverage }))} />
 
       <div className="flex flex-col gap-3">
-        <Tabs value={selectedAxis} onValueChange={(v) => setSelectedAxis(v as SkillAxis)}>
+        <Tabs value={selectedAxis} onValueChange={(v) => v && setSelectedAxis(v)}>
           <TabsList className="flex-wrap h-auto">
             {snapshots.map((s) => (
               <TabsTrigger key={s.axis} value={s.axis} className="text-xs">
-                {AXIS_LABELS[s.axis]}
+                {axisLabel(s.axis)}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -60,7 +76,7 @@ export function RadarClient({ snapshots }: RadarClientProps) {
           <tbody>
             {snapshots.map((s) => (
               <tr key={s.axis} className="border-b border-border last:border-0">
-                <td className="py-2 text-foreground">{AXIS_LABELS[s.axis]}</td>
+                <td className="py-2 text-foreground">{axisLabel(s.axis)}</td>
                 <td className="py-2 text-right tabular-nums font-medium">
                   {s.sampleCount > 0 ? Math.round(s.rollingAverage) : "—"}
                 </td>

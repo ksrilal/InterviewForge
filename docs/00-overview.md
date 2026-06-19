@@ -1,6 +1,6 @@
 # InterviewForge — Documentation Index
 
-InterviewForge is a personal-use (single-user) Software Engineering Interview Training Platform. It simulates real interviews, evaluates answers with AI, tracks skill growth over time, and generates a personalized prep plan.
+InterviewForge is a multi-tenant Software Engineering Interview Training Platform (originally built single-user, pivoted to support multiple accounts - see "v2 multi-tenant pivot" below). It simulates real interviews, evaluates answers with AI, tracks skill growth over time, and generates a personalized prep plan.
 
 ## Locked-in decisions
 
@@ -8,10 +8,15 @@ InterviewForge is a personal-use (single-user) Software Engineering Interview Tr
 |---|---|
 | AI providers | Both Anthropic and OpenAI supported behind one interface, switchable via `ACTIVE_AI_PROVIDER` env var |
 | Data layer | Supabase Postgres (not local-only) — needed for history, skill radar trends, training plans |
-| Auth | No external auth provider. Single hardcoded user via env vars + signed httpOnly session cookie + Next.js middleware |
+| Auth | Supabase Auth - Google OAuth and email/password, both first-class. Real per-user RLS (`auth.uid() = user_id`) isolates each account's data — see `supabase/migrations/0004_multi_tenant_foundation.sql` |
 | Architecture | Next.js App Router, Server Actions as the only "backend", Supabase for persistence, no separate API server |
 | AI abstraction | Thin unified interface (`AIProvider`) with two implementations, selected by factory — not a heavy plugin registry |
+| Multi-domain | `domains` is user-creatable, not a fixed scaffold — anyone can add a domain from `/questions` by pasting text or uploading a markdown/PDF (resume/JD); the AI extracts a categorized question set for it. Software Engineering is the only global/shared domain (`owner_user_id is null`); user-created domains and their generated questions are private to the creator. See `supabase/migrations/0007_user_domains_and_knowledge_ingestion.sql` and `src/actions/domain.actions.ts` |
 | Delivery | Docs first (this set), then code scaffold in a follow-up pass |
+
+## v2 multi-tenant pivot
+
+The documents in this folder (01 through 14) describe the **original single-user design** and predate the multi-tenant pivot. They're kept for historical rationale on modules/flows/components that are still accurate (the interview loop, evaluation engine, follow-up engine, skill radar math are all unchanged). Where they describe auth ("single hardcoded user", "no users table", env-var credentials), treat `supabase/migrations/0004_multi_tenant_foundation.sql` and `src/lib/auth/guard.ts` as the current source of truth instead.
 
 ## Document map
 

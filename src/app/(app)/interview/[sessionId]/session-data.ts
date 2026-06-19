@@ -10,7 +10,7 @@ export interface SessionContext {
 }
 
 export async function getSessionContext(sessionId: string): Promise<SessionContext | null> {
-  const supabase = getSupabaseServerClient();
+  const supabase = await getSupabaseServerClient();
 
   const { data: session } = await supabase.from("sessions").select("*").eq("id", sessionId).single();
   if (!session) return null;

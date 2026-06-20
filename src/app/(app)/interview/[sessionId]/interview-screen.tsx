@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -130,7 +131,7 @@ export function InterviewScreen({
   }
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-4 max-w-2xl mx-auto w-full">
+    <div className="flex flex-col gap-4 px-4 py-4 max-w-4xl mx-auto w-full">
       <div className="flex items-center justify-between">
         <ThreadProgress
           rootCount={rootCount}
@@ -173,7 +174,7 @@ export function InterviewScreen({
               <DialogTrigger render={<Button variant="outline" size="lg" />}>
                 End Session
               </DialogTrigger>
-              <DialogContent>
+              <DialogContent closeButtonDisabled={isPending}>
                 <DialogHeader>
                   <DialogTitle>End this session?</DialogTitle>
                   <DialogDescription>
@@ -181,6 +182,9 @@ export function InterviewScreen({
                   </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
+                  <DialogClose render={<Button variant="outline" disabled={isPending} />}>
+                    Cancel
+                  </DialogClose>
                   <Button onClick={handleEnd} disabled={isPending}>
                     End Session
                   </Button>

@@ -7,8 +7,27 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
 
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+// Closing is intentionally restricted to an explicit in-dialog action (the
+// Cancel/Close button or the header's X) - an outside click or a stray
+// Escape press must never silently discard in-progress form input (e.g. a
+// half-filled "Create a domain" dialog).
+const DISMISS_REASONS_TO_BLOCK = new Set(["outside-press", "escape-key"]);
+
+function Dialog({ onOpenChange, ...props }: DialogPrimitive.Root.Props) {
+  return (
+    <DialogPrimitive.Root
+      data-slot="dialog"
+      disablePointerDismissal
+      onOpenChange={(open, eventDetails) => {
+        if (DISMISS_REASONS_TO_BLOCK.has(eventDetails.reason)) {
+          eventDetails.cancel();
+          return;
+        }
+        onOpenChange?.(open, eventDetails);
+      }}
+      {...props}
+    />
+  )
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
@@ -43,9 +62,14 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  closeButtonDisabled = false,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  // Disables the header X while a submit/mutation triggered from inside
+  // this dialog is in flight, so it can't be used to dodge the same
+  // "only an explicit Cancel" rule the Cancel button itself follows.
+  closeButtonDisabled?: boolean
 }) {
   return (
     <DialogPortal>
@@ -62,11 +86,13 @@ function DialogContent({
         {showCloseButton && (
           <DialogPrimitive.Close
             data-slot="dialog-close"
+            disabled={closeButtonDisabled}
             render={
               <Button
                 variant="ghost"
                 className="absolute top-2 right-2"
                 size="icon-sm"
+                disabled={closeButtonDisabled}
               />
             }
           >

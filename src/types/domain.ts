@@ -6,14 +6,11 @@ export type {
   SessionStatus,
   SessionVerdict,
   SkillAxis,
+  InterviewerPersonality,
+  CompanyType,
 } from "@/lib/supabase/types";
 
-import type {
-  InterviewLevel,
-  InterviewType,
-  QuestionType,
-  SkillAxis,
-} from "@/lib/supabase/types";
+import type { InterviewLevel, QuestionType, SkillAxis } from "@/lib/supabase/types";
 
 export interface Question {
   id: string;
@@ -22,8 +19,12 @@ export interface Question {
   questionType: QuestionType;
   difficulty: number;
   level: InterviewLevel;
-  interviewTypes: InterviewType[];
-  skillAxes: SkillAxis[];
+  // string[], not InterviewType[] - custom-domain questions leave this
+  // empty (see knowledge-extraction.prompt.ts), so it can't be the strict
+  // SE-only union.
+  interviewTypes: string[];
+  // Free text - see QuestionRow.skill_axes.
+  skillAxes: string[];
   prompt: string;
   expectedAnswerAreas: string[];
   commonMistakes: string[];
@@ -62,13 +63,17 @@ export interface GeneratedQuestion {
   questionType: QuestionType;
   difficulty: number;
   level: InterviewLevel;
-  interviewTypes: InterviewType[];
-  skillAxes: SkillAxis[];
+  interviewTypes: string[];
+  skillAxes: string[];
   prompt: string;
   expectedAnswerAreas: string[];
   commonMistakes: string[];
   followUpSeeds: string[];
   scoringRubric: Record<string, string>;
+}
+
+export interface KnowledgeExtractionResult {
+  questions: GeneratedQuestion[];
 }
 
 export interface TrainingPlan {

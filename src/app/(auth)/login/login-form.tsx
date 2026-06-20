@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Form,
   FormControl,
@@ -14,54 +18,128 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-import { Input } from "@/components/ui/input";
-import { login } from "@/actions/auth.actions";
 
-const LoginFormSchema = z.object({
-  username: z.string().min(1, "Username is required"),
-  password: z.string().min(1, "Password is required"),
+const EmailPasswordSchema = z.object({
+  email: z.string().email("Enter a valid email address"),
+  password: z.string().min(6, "At least 6 characters"),
 });
 
-type LoginFormValues = z.infer<typeof LoginFormSchema>;
+type EmailPasswordValues = z.infer<typeof EmailPasswordSchema>;
+type AuthMode = "signin" | "signup";
 
 export function LoginForm() {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [serverError, setServerError] = useState<string | null>(null);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [googleError, setGoogleError] = useState<string | null>(null);
+  const [mode, setMode] = useState<AuthMode>("signin");
 
-  const form = useForm<LoginFormValues>({
-    resolver: zodResolver(LoginFormSchema),
-    defaultValues: { username: "", password: "" },
+  async function handleGoogleLogin() {
+    setGoogleError(null);
+    setIsGoogleLoading(true);
+
+    const supabase = getSupabaseBrowserClient();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+
+    if (error) {
+      setGoogleError(error.message);
+      setIsGoogleLoading(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-4 w-full">
+      <Button
+        onClick={handleGoogleLogin}
+        disabled={isGoogleLoading}
+        variant="outline"
+        className="w-full"
+      >
+        {isGoogleLoading ? "Redirecting..." : "Continue with Google"}
+      </Button>
+      {googleError && <p className="text-sm text-destructive">{googleError}</p>}
+
+      <div className="flex items-center gap-2">
+        <Separator className="flex-1" />
+        <span className="text-xs text-muted-foreground">or</span>
+        <Separator className="flex-1" />
+      </div>
+
+      <Tabs value={mode} onValueChange={(v) => setMode(v as AuthMode)}>
+        <TabsList className="grid grid-cols-2 w-full">
+          <TabsTrigger value="signin">Sign in</TabsTrigger>
+          <TabsTrigger value="signup">Create account</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      <EmailPasswordForm mode={mode} />
+    </div>
+  );
+}
+
+function EmailPasswordForm({ mode }: { mode: AuthMode }) {
+  const router = useRouter();
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+
+  const form = useForm<EmailPasswordValues>({
+    resolver: zodResolver(EmailPasswordSchema),
+    defaultValues: { email: "", password: "" },
   });
 
-  function onSubmit(values: LoginFormValues) {
-    setServerError(null);
-    const formData = new FormData();
-    formData.set("username", values.username);
-    formData.set("password", values.password);
+  async function onSubmit(values: EmailPasswordValues) {
+    setError(null);
+    setInfo(null);
+    setIsPending(true);
 
-    startTransition(async () => {
-      const result = await login(formData);
-      if (result.ok) {
-        router.push("/dashboard");
-        router.refresh();
-      } else {
-        setServerError(result.error ?? "Login failed.");
+    const supabase = getSupabaseBrowserClient();
+
+    if (mode === "signin") {
+      const { error: signInError } = await supabase.auth.signInWithPassword(values);
+      setIsPending(false);
+      if (signInError) {
+        setError(signInError.message);
+        return;
       }
+      router.push("/dashboard");
+      router.refresh();
+      return;
+    }
+
+    const { data, error: signUpError } = await supabase.auth.signUp({
+      email: values.email,
+      password: values.password,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     });
+    setIsPending(false);
+
+    if (signUpError) {
+      setError(signUpError.message);
+      return;
+    }
+
+    if (data.session) {
+      router.push("/dashboard");
+      router.refresh();
+      return;
+    }
+
+    setInfo("Account created - check your email to confirm it before signing in.");
   }
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4 w-full">
+      <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-4">
         <FormField
           control={form.control}
-          name="username"
+          name="email"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Username</FormLabel>
+              <FormLabel>Email</FormLabel>
               <FormControl>
-                <Input autoComplete="username" autoFocus {...field} />
+                <Input type="email" autoComplete="email" autoFocus {...field} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -74,15 +152,26 @@ export function LoginForm() {
             <FormItem>
               <FormLabel>Password</FormLabel>
               <FormControl>
-                <Input type="password" autoComplete="current-password" {...field} />
+                <Input
+                  type="password"
+                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                  {...field}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
           )}
         />
-        {serverError && <p className="text-sm text-destructive">{serverError}</p>}
-        <Button type="submit" disabled={isPending} className="w-full mt-2">
-          {isPending ? "Logging in..." : "Log In"}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        {info && <p className="text-sm text-muted-foreground">{info}</p>}
+        <Button type="submit" disabled={isPending} className="w-full">
+          {isPending
+            ? mode === "signin"
+              ? "Signing in..."
+              : "Creating account..."
+            : mode === "signin"
+              ? "Sign in"
+              : "Create account"}
         </Button>
       </form>
     </Form>

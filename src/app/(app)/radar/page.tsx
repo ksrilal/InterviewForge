@@ -1,15 +1,36 @@
 import { getLatestSkillSnapshots } from "@/actions/radar.actions";
+import { listDomains } from "@/actions/domain.actions";
+import { DomainSelector } from "@/components/domain-selector";
 import { RadarClient } from "./radar-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function RadarPage() {
-  const snapshots = await getLatestSkillSnapshots();
+interface PageProps {
+  searchParams: Promise<{ domain?: string }>;
+}
+
+export default async function RadarPage({ searchParams }: PageProps) {
+  const { domain } = await searchParams;
+  const domains = await listDomains();
+  const defaultDomain = domains.find((d) => !d.isCustom) ?? domains[0];
+  const selectedDomainId = domain ?? defaultDomain?.id;
+
+  if (!selectedDomainId) {
+    return (
+      <div className="flex flex-col gap-4 px-4 py-6 max-w-4xl mx-auto w-full">
+        <h1 className="text-xl font-semibold tracking-tight">Skill Radar</h1>
+        <p className="text-sm text-muted-foreground">No domains available yet.</p>
+      </div>
+    );
+  }
+
+  const snapshots = await getLatestSkillSnapshots(selectedDomainId);
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6 max-w-2xl mx-auto w-full">
+    <div className="flex flex-col gap-4 px-4 py-6 max-w-4xl mx-auto w-full">
       <h1 className="text-xl font-semibold tracking-tight">Skill Radar</h1>
-      <RadarClient snapshots={snapshots} />
+      <DomainSelector domains={domains} selectedDomainId={selectedDomainId} basePath="/radar" />
+      <RadarClient snapshots={snapshots} domainId={selectedDomainId} />
     </div>
   );
 }

@@ -12,13 +12,13 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 
-const LEVELS = [
-  { value: "junior", label: "Junior" },
-  { value: "mid", label: "Mid" },
-  { value: "senior", label: "Senior" },
-  { value: "staff", label: "Staff" },
-  { value: "tech_lead", label: "Tech Lead" },
-];
+const LEVEL_LABELS: Record<string, string> = {
+  junior: "Junior",
+  mid: "Mid",
+  senior: "Senior",
+  staff: "Staff",
+  tech_lead: "Tech Lead",
+};
 
 const TYPES = [
   { value: "backend", label: "Backend" },
@@ -33,10 +33,20 @@ const TYPES = [
 ];
 
 interface QuestionFiltersBarProps {
+  domainId: string;
   categories: string[];
+  // Only the levels this domain's questions actually use - mirrors
+  // categories, instead of always offering all 5 SE levels regardless of
+  // whether they're populated for this domain.
+  levels: string[];
+  // interview_type (backend/devops/...) is Software-Engineering-specific
+  // and left empty on custom-domain questions (see
+  // knowledge-extraction.prompt.ts) - filtering by it there would just
+  // silently return nothing, so the control is hidden instead.
+  isCustomDomain: boolean;
 }
 
-export function QuestionFiltersBar({ categories }: QuestionFiltersBarProps) {
+export function QuestionFiltersBar({ domainId, categories, levels, isCustomDomain }: QuestionFiltersBarProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
@@ -50,7 +60,7 @@ export function QuestionFiltersBar({ categories }: QuestionFiltersBarProps) {
       params.delete(key);
     }
     startTransition(() => {
-      router.push(`/questions?${params.toString()}`);
+      router.push(`/questions/domain/${domainId}?${params.toString()}`);
     });
   }
 
@@ -88,30 +98,32 @@ export function QuestionFiltersBar({ categories }: QuestionFiltersBarProps) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="">All levels</SelectItem>
-            {LEVELS.map((l) => (
-              <SelectItem key={l.value} value={l.value}>
-                {l.label}
+            {levels.map((l) => (
+              <SelectItem key={l} value={l}>
+                {LEVEL_LABELS[l] ?? l}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
 
-        <Select
-          value={searchParams.get("interviewType") ?? ""}
-          onValueChange={(value) => updateParam("interviewType", value || null)}
-        >
-          <SelectTrigger size="sm">
-            <SelectValue placeholder="Type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="">All types</SelectItem>
-            {TYPES.map((t) => (
-              <SelectItem key={t.value} value={t.value}>
-                {t.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {!isCustomDomain && (
+          <Select
+            value={searchParams.get("interviewType") ?? ""}
+            onValueChange={(value) => updateParam("interviewType", value || null)}
+          >
+            <SelectTrigger size="sm">
+              <SelectValue placeholder="Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All types</SelectItem>
+              {TYPES.map((t) => (
+                <SelectItem key={t.value} value={t.value}>
+                  {t.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
 
         <Select
           value={searchParams.get("category") ?? ""}
@@ -136,7 +148,7 @@ export function QuestionFiltersBar({ categories }: QuestionFiltersBarProps) {
             size="sm"
             onClick={() => {
               setSearchInput("");
-              router.push("/questions");
+              router.push(`/questions/domain/${domainId}`);
             }}
           >
             Clear filters

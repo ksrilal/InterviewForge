@@ -40,7 +40,7 @@ export function ResetDataButton() {
         <DialogTrigger render={<Button variant="destructive" />}>
           Reset All Data
         </DialogTrigger>
-        <DialogContent>
+        <DialogContent closeButtonDisabled={isPending}>
           <DialogHeader>
             <DialogTitle>Reset all data?</DialogTitle>
             <DialogDescription>

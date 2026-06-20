@@ -79,6 +79,25 @@ export const GeneratedQuestionSchema = z.object({
   scoringRubric: z.record(z.string(), z.string()),
 });
 
+export const KnowledgeExtractionSchema = z.object({
+  questions: z.array(GeneratedQuestionSchema).min(1),
+});
+
+// Used for knowledge extraction into a custom (non-Software-Engineering)
+// domain - interviewTypes/skillAxes there can't be validated against the SE
+// enums above since a domain like "Interior Designer" has none of those
+// categories. interviewTypes isn't meaningfully used for custom domains
+// (see question.actions.ts#pickQuestionInDomain) so it's just left optional;
+// skillAxes is free text so the AI can invent domain-appropriate labels.
+const FreeformGeneratedQuestionSchema = GeneratedQuestionSchema.extend({
+  interviewTypes: z.array(z.string()).default([]),
+  skillAxes: z.array(z.string()).min(1),
+});
+
+export const FreeformKnowledgeExtractionSchema = z.object({
+  questions: z.array(FreeformGeneratedQuestionSchema).min(1),
+});
+
 export const TrainingPlanSchema = z.object({
   targetLevel: InterviewLevelSchema.nullable(),
   targetDate: z.string().nullable(),

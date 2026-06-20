@@ -1,12 +1,14 @@
 import type {
+  CompanyType,
   Evaluation,
   FollowUpDecision,
   GeneratedQuestion,
+  InterviewerPersonality,
   InterviewLevel,
   InterviewType,
+  KnowledgeExtractionResult,
   QuestionType,
   SessionVerdict,
-  SkillAxis,
   TrainingPlan,
 } from "@/types/domain";
 import { AnthropicProvider } from "./providers/anthropic.provider";
@@ -22,11 +24,14 @@ export interface EvaluateAnswerInput {
     commonMistakes: string[];
   };
   answerText: string;
+  personality?: InterviewerPersonality;
+  companyType?: CompanyType | null;
 }
 
 export interface DecideFollowUpInput {
   level: InterviewLevel;
   interviewType: InterviewType;
+  domainName?: string;
   rootQuestionPrompt: string;
   expectedAnswerAreas: string[];
   followUpSeeds: string[];
@@ -34,6 +39,8 @@ export interface DecideFollowUpInput {
   evaluation: Evaluation;
   followUpCount: number;
   maxFollowUps: number;
+  personality?: InterviewerPersonality;
+  companyType?: CompanyType | null;
 }
 
 export interface GenerateQuestionInput {
@@ -42,13 +49,30 @@ export interface GenerateQuestionInput {
   questionType: QuestionType;
   topic?: string;
   recentPromptTitles: string[];
+  personality?: InterviewerPersonality;
+  companyType?: CompanyType | null;
 }
 
 export interface GenerateTrainingPlanInput {
-  skillSnapshots: { axis: SkillAxis; rollingAverage: number; sampleCount: number }[];
+  // string, not SkillAxis - training plans are still SE-domain-only for now,
+  // but the snapshots they're built from come from the now-generic
+  // (string-typed) radar pipeline.
+  skillSnapshots: { axis: string; rollingAverage: number; sampleCount: number }[];
   targetLevel: InterviewLevel | null;
   targetDate: string | null;
   recentVerdicts: SessionVerdict[];
+}
+
+export interface ExtractKnowledgeInput {
+  domainName: string;
+  domainDescription?: string;
+  sourceText: string;
+  isCustomDomain: boolean;
+}
+
+export interface AIUsage {
+  inputTokens: number;
+  outputTokens: number;
 }
 
 export interface AIProvider {
@@ -58,6 +82,13 @@ export interface AIProvider {
   decideFollowUp(input: DecideFollowUpInput): Promise<FollowUpDecision>;
   generateQuestion(input: GenerateQuestionInput): Promise<GeneratedQuestion>;
   generateTrainingPlan(input: GenerateTrainingPlanInput): Promise<TrainingPlan>;
+  extractKnowledge(input: ExtractKnowledgeInput): Promise<KnowledgeExtractionResult>;
+  // Token usage from the most recently completed call on this instance
+  // (summed across the repair-retry attempt if one happened). Read this
+  // immediately after awaiting one of the methods above - getAIProvider()
+  // returns a fresh instance per call site, so there's no cross-request
+  // state to worry about.
+  getLastUsage(): AIUsage | null;
 }
 
 export type ProviderName = "anthropic" | "openai";

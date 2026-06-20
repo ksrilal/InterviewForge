@@ -1,16 +1,61 @@
 "use server";
 
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAuth } from "@/lib/auth/guard";
+import { requireUser } from "@/lib/auth/guard";
 import { computeRollingAverage, ALL_SKILL_AXES } from "@/lib/scoring/skill-weighting";
-import type { SkillAxis } from "@/types/domain";
-import type { SkillScoreEventRow, SkillSnapshotRow, AnswerRow, SessionQuestionRow, QuestionRow } from "@/lib/supabase/types";
+import type {
+  SkillScoreEventRow,
+  SkillSnapshotRow,
+  AnswerRow,
+  SessionQuestionRow,
+  SessionRow,
+  DomainRow,
+  QuestionRow,
+} from "@/lib/supabase/types";
+
+type SupabaseClient = Awaited<ReturnType<typeof getSupabaseServerClient>>;
+
+// The global Software Engineering domain keeps its fixed, well-known axis
+// list (so its radar still shows a full skeleton with zero history). Custom
+// domains have no fixed list - their axes are whatever the AI invented for
+// that domain's own questions. Read straight from the question bank
+// (skill_axes), not from skill_snapshots/skill_score_events - those only
+// get written once a session is completed and scored, which would leave a
+// brand new custom domain's radar empty even though its questions (and
+// their axes) already exist from domain creation.
+async function resolveDomainAxes(supabase: SupabaseClient, domainId: string): Promise<string[]> {
+  const { data: domain } = await supabase
+    .from("domains")
+    .select("owner_user_id")
+    .eq("id", domainId)
+    .single();
+  const isCustomDomain = !!(domain as Pick<DomainRow, "owner_user_id"> | null)?.owner_user_id;
+  if (!isCustomDomain) return ALL_SKILL_AXES;
+
+  const { data } = await supabase
+    .from("questions")
+    .select("skill_axes")
+    .eq("domain_id", domainId);
+  const axes = new Set(((data ?? []) as Pick<QuestionRow, "skill_axes">[]).flatMap((r) => r.skill_axes));
+  return Array.from(axes).sort();
+}
 
 // Called by endSession: fans out each evaluated answer's score into
 // skill_score_events per skill_axis the question touched, then writes one
 // skill_snapshots row per axis with the freshly computed rolling average.
+// Scoped to the session's domain throughout - skill axes (architecture,
+// system_design, ...) are an SE-flavored taxonomy, so blending scores across
+// unrelated domains would produce a meaningless combined radar.
 export async function writeSkillSnapshotsForSession(sessionId: string): Promise<void> {
-  const supabase = getSupabaseServerClient();
+  const supabase = await getSupabaseServerClient();
+
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("domain_id")
+    .eq("id", sessionId)
+    .single();
+  const domainId = (session as Pick<SessionRow, "domain_id"> | null)?.domain_id;
+  if (!domainId) return;
 
   const { data: sessionQuestions } = await supabase
     .from("session_questions")
@@ -40,7 +85,7 @@ export async function writeSkillSnapshotsForSession(sessionId: string): Promise<
   );
   const sqToQuestionId = new Map(sqRows.map((r) => [r.id, r.question_id]));
 
-  const eventsToInsert: Omit<SkillScoreEventRow, "id" | "occurred_at">[] = [];
+  const eventsToInsert: Omit<SkillScoreEventRow, "id" | "occurred_at" | "user_id">[] = [];
 
   for (const answer of answerRows) {
     const questionId = sqToQuestionId.get(answer.session_question_id);
@@ -49,6 +94,7 @@ export async function writeSkillSnapshotsForSession(sessionId: string): Promise<
 
     for (const axis of question.skill_axes) {
       eventsToInsert.push({
+        domain_id: domainId,
         answer_id: answer.id,
         skill_axis: axis,
         score: answer.overall_score as number,
@@ -61,11 +107,17 @@ export async function writeSkillSnapshotsForSession(sessionId: string): Promise<
     await supabase.from("skill_score_events").insert(eventsToInsert);
   }
 
-  // Recompute rolling averages per axis using all history, not just this session.
-  for (const axis of ALL_SKILL_AXES) {
+  // Recompute rolling averages only for axes this session actually touched
+  // (using all history within this domain, not just this session and not
+  // other domains) - works for both the fixed SE axis list and whatever
+  // free-text axes a custom domain's questions carry, with no branching
+  // needed here since we're only ever looking at axes that already exist.
+  const touchedAxes = new Set(eventsToInsert.map((e) => e.skill_axis));
+  for (const axis of touchedAxes) {
     const { data: axisEvents } = await supabase
       .from("skill_score_events")
       .select("score, occurred_at")
+      .eq("domain_id", domainId)
       .eq("skill_axis", axis)
       .order("occurred_at", { ascending: false })
       .limit(50);
@@ -78,6 +130,7 @@ export async function writeSkillSnapshotsForSession(sessionId: string): Promise<
     );
 
     await supabase.from("skill_snapshots").insert({
+      domain_id: domainId,
       skill_axis: axis,
       rolling_average: average,
       sample_count: sampleCount,
@@ -86,20 +139,21 @@ export async function writeSkillSnapshotsForSession(sessionId: string): Promise<
 }
 
 export interface SkillSnapshotSummary {
-  axis: SkillAxis;
+  axis: string;
   rollingAverage: number;
   sampleCount: number;
 }
 
-export async function getLatestSkillSnapshots(): Promise<SkillSnapshotSummary[]> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+export async function getLatestSkillSnapshots(domainId: string): Promise<SkillSnapshotSummary[]> {
+  const { supabase } = await requireUser();
+  const axes = await resolveDomainAxes(supabase, domainId);
 
   const results: SkillSnapshotSummary[] = [];
-  for (const axis of ALL_SKILL_AXES) {
+  for (const axis of axes) {
     const { data } = await supabase
       .from("skill_snapshots")
       .select("*")
+      .eq("domain_id", domainId)
       .eq("skill_axis", axis)
       .order("snapshot_at", { ascending: false })
       .limit(1)
@@ -116,13 +170,16 @@ export async function getLatestSkillSnapshots(): Promise<SkillSnapshotSummary[]>
   return results;
 }
 
-export async function getSkillTrend(axis: SkillAxis): Promise<{ date: string; value: number }[]> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+export async function getSkillTrend(
+  axis: string,
+  domainId: string
+): Promise<{ date: string; value: number }[]> {
+  const { supabase } = await requireUser();
 
   const { data } = await supabase
     .from("skill_snapshots")
     .select("rolling_average, snapshot_at")
+    .eq("domain_id", domainId)
     .eq("skill_axis", axis)
     .order("snapshot_at", { ascending: true })
     .limit(50);

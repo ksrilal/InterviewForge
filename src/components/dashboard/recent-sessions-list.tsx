@@ -11,11 +11,14 @@ interface RecentSession {
 
 interface RecentSessionsListProps {
   sessions: RecentSession[];
+  // interview_type is a placeholder value for custom domains (see
+  // session.actions.ts#startSession) - not worth showing there.
+  isCustomDomain: boolean;
 }
 
 const VERDICT_ICON: Record<string, string> = { pass: "✓", borderline: "⚠", fail: "✕" };
 
-export function RecentSessionsList({ sessions }: RecentSessionsListProps) {
+export function RecentSessionsList({ sessions, isCustomDomain }: RecentSessionsListProps) {
   if (sessions.length === 0) {
     return <p className="text-sm text-muted-foreground">No sessions yet. Start your first interview above.</p>;
   }
@@ -29,7 +32,8 @@ export function RecentSessionsList({ sessions }: RecentSessionsListProps) {
             className="flex items-center justify-between rounded-md border border-border px-3 py-2.5 text-sm hover:bg-accent/40"
           >
             <span className="capitalize text-foreground">
-              {s.level.replace("_", " ")} &middot; {s.interviewType.replace("_", " ")}
+              {s.level.replace("_", " ")}
+              {!isCustomDomain ? ` · ${s.interviewType.replace("_", " ")}` : ""}
             </span>
             <span className="flex items-center gap-2 tabular-nums text-muted-foreground">
               {s.overallScore != null ? Math.round(s.overallScore) : "—"}

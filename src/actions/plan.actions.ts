@@ -1,18 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAuth } from "@/lib/auth/guard";
+import { requireUser } from "@/lib/auth/guard";
 import { getAIProvider } from "@/ai/provider";
+import { checkAIQuota, recordAIUsage } from "@/lib/ai/usage-gate";
 import { getLatestSkillSnapshots } from "./radar.actions";
+import { listDomains } from "./domain.actions";
 import type { ActionResult, InterviewLevel, TrainingPlan } from "@/types/domain";
 import type { TrainingPlanRow, SessionRow } from "@/lib/supabase/types";
 
 const MIN_SESSIONS_FOR_PLAN = 3;
 
 export async function getActivePlan(): Promise<TrainingPlanRow | null> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+  const { supabase } = await requireUser();
   const { data } = await supabase
     .from("training_plans")
     .select("*")
@@ -22,8 +22,7 @@ export async function getActivePlan(): Promise<TrainingPlanRow | null> {
 }
 
 export async function getCompletedSessionCount(): Promise<number> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+  const { supabase } = await requireUser();
   const { count } = await supabase
     .from("sessions")
     .select("id", { count: "exact", head: true })
@@ -35,8 +34,7 @@ export async function generatePlan(
   targetLevel: InterviewLevel | null,
   targetDate: string | null
 ): Promise<ActionResult<TrainingPlan>> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+  const { supabase, user } = await requireUser();
 
   const completedCount = await getCompletedSessionCount();
   if (completedCount < MIN_SESSIONS_FOR_PLAN) {
@@ -46,7 +44,11 @@ export async function generatePlan(
     };
   }
 
-  const snapshots = await getLatestSkillSnapshots();
+  // Training plans are still scoped to the global Software Engineering
+  // domain only - per-domain plans aren't part of this feature yet.
+  const domains = await listDomains();
+  const seDomain = domains.find((d) => !d.isCustom) ?? domains[0];
+  const snapshots = seDomain ? await getLatestSkillSnapshots(seDomain.id) : [];
   const { data: recentSessions } = await supabase
     .from("sessions")
     .select("verdict")
@@ -62,6 +64,7 @@ export async function generatePlan(
   const provider = getAIProvider();
   let plan: TrainingPlan;
   try {
+    await checkAIQuota(user.id);
     plan = await provider.generateTrainingPlan({
       skillSnapshots: snapshots.map((s) => ({
         axis: s.axis,
@@ -72,6 +75,7 @@ export async function generatePlan(
       targetDate,
       recentVerdicts,
     });
+    await recordAIUsage(user.id, provider);
   } catch (err) {
     return { ok: false, error: (err as Error).message };
   }

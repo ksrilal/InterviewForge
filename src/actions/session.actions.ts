@@ -1,14 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { requireAuth } from "@/lib/auth/guard";
-import { pickRootQuestion, pickQuestionByTypeMix } from "./question.actions";
+import { requireUser } from "@/lib/auth/guard";
+import { pickRootQuestion, pickQuestionByTypeMix, pickQuestionInDomain } from "./question.actions";
 import { getAIProvider } from "@/ai/provider";
+import { checkAIQuota, recordAIUsage } from "@/lib/ai/usage-gate";
 import { MOCK_MODE_CONFIG } from "@/lib/scoring/mock-templates";
 import { computeReadinessVerdict } from "@/lib/scoring/readiness";
 import { writeSkillSnapshotsForSession } from "./radar.actions";
 import type {
+  CompanyType,
+  InterviewerPersonality,
   InterviewLevel,
   InterviewType,
   SessionMode,
@@ -23,22 +25,37 @@ export interface StartSessionResult {
 }
 
 export async function startSession(
+  domainId: string,
   level: InterviewLevel,
   interviewType: InterviewType,
-  mode: SessionMode
+  mode: SessionMode,
+  personality: InterviewerPersonality = "professional",
+  companyType: CompanyType | null = null
 ): Promise<ActionResult<StartSessionResult>> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+  const { supabase } = await requireUser();
   const config = MOCK_MODE_CONFIG[mode];
+
+  // interview_type's fixed categories (backend/dotnet/...) only meaningfully
+  // describe the global Software Engineering domain's content - a custom
+  // domain's questions are scoped by domain_id + level alone.
+  const { data: domain } = await supabase
+    .from("domains")
+    .select("name, owner_user_id")
+    .eq("id", domainId)
+    .single();
+  const isCustomDomain = !!domain?.owner_user_id;
 
   const { data: session, error: sessionError } = await supabase
     .from("sessions")
     .insert({
+      domain_id: domainId,
       mode,
       level,
       interview_type: interviewType,
       status: "in_progress",
       time_limit_seconds: config.timeLimitSeconds,
+      interviewer_personality: personality,
+      company_type: companyType,
     })
     .select("*")
     .single();
@@ -51,11 +68,13 @@ export async function startSession(
 
   const firstTypeMix = config.typeSequence[0];
   const question = firstTypeMix
-    ? await pickQuestionByTypeMix(level, [firstTypeMix], [])
-    : await pickRootQuestion(level, interviewType, []);
+    ? await pickQuestionByTypeMix(domainId, level, [firstTypeMix], [])
+    : isCustomDomain
+      ? await pickQuestionInDomain(domainId, level, [])
+      : await pickRootQuestion(domainId, level, interviewType, []);
 
   if (!question) {
-    return { ok: false, error: "No questions available for this level/type combination." };
+    return { ok: false, error: "No questions available for this domain/level/type combination." };
   }
 
   const { data: sessionQuestion, error: sqError } = await supabase
@@ -93,8 +112,7 @@ export interface EndSessionResult {
 }
 
 export async function endSession(sessionId: string): Promise<ActionResult<EndSessionResult>> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+  const { supabase, user } = await requireUser();
 
   const { data: session, error: sessionFetchError } = await supabase
     .from("sessions")
@@ -138,6 +156,7 @@ export async function endSession(sessionId: string): Promise<ActionResult<EndSes
 
   let narrative = "Session completed.";
   try {
+    await checkAIQuota(user.id);
     const narrativeResult = await provider.evaluateAnswer({
       question: {
         prompt: "Summarize this candidate's overall interview session performance in 2-3 sentences.",
@@ -148,10 +167,14 @@ export async function endSession(sessionId: string): Promise<ActionResult<EndSes
         commonMistakes: [],
       },
       answerText: `Strengths observed: ${allStrengths.join("; ")}. Weaknesses observed: ${allWeaknesses.join("; ")}. Missing concepts: ${allMissing.join("; ")}. Overall score: ${overallScore}.`,
+      personality: sessionRow.interviewer_personality,
+      companyType: sessionRow.company_type,
     });
+    await recordAIUsage(user.id, provider);
     narrative = narrativeResult.interviewerFeedback || narrative;
   } catch {
-    // Narrative generation is a nice-to-have; session completion must not fail because of it.
+    // Narrative generation is a nice-to-have (including when AI quota is
+    // exhausted); session completion must not fail because of it.
   }
 
   const { error: updateError } = await supabase
@@ -186,8 +209,7 @@ export async function endSession(sessionId: string): Promise<ActionResult<EndSes
 }
 
 export async function abandonSession(sessionId: string): Promise<void> {
-  await requireAuth();
-  const supabase = getSupabaseServerClient();
+  const { supabase } = await requireUser();
   await supabase
     .from("sessions")
     .update({ status: "abandoned", ended_at: new Date().toISOString() })

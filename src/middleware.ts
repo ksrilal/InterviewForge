@@ -1,22 +1,42 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { SESSION_COOKIE_NAME, verifySessionToken } from "@/lib/auth/session";
+import { createServerClient } from "@supabase/ssr";
 
-export function middleware(request: NextRequest) {
-  const token = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-  const isAuthenticated = verifySessionToken(token);
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({ request });
 
-  if (!isAuthenticated) {
-    const loginUrl = new URL("/login", request.url);
-    return NextResponse.redirect(loginUrl);
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+          response = NextResponse.next({ request });
+          cookiesToSet.forEach(({ name, value, options }) =>
+            response.cookies.set(name, value, options)
+          );
+        },
+      },
+    }
+  );
+
+  // Refreshing the session here (rather than only in Server Components) is
+  // required by @supabase/ssr - it's what keeps the auth cookie valid across
+  // requests instead of expiring silently.
+  const { data } = await supabase.auth.getUser();
+
+  if (!data.user) {
+    return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {
-  // Guards everything except the login page, static assets, and Next.js internals.
-  matcher: ["/((?!login|_next/static|_next/image|favicon.ico).*)"],
-  // Session verification uses Node's `crypto` (createHmac/timingSafeEqual),
-  // which the default Edge Runtime doesn't support - run on Node instead.
-  runtime: "nodejs",
+  // Guards everything except the login page, the OAuth callback, static
+  // assets, and Next.js internals.
+  matcher: ["/((?!login|auth/callback|_next/static|_next/image|favicon.ico).*)"],
 };

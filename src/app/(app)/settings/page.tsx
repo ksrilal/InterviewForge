@@ -1,24 +1,26 @@
-import { cookies } from "next/headers";
-import { requireAuth } from "@/lib/auth/guard";
-import { SESSION_COOKIE_NAME } from "@/lib/auth/session";
+import { requireUser } from "@/lib/auth/guard";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResetDataButton } from "./reset-data-button";
 
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  await requireAuth();
+  const { supabase, user } = await requireUser();
+  const accountLabel = user.email ?? user.user_metadata?.full_name ?? "—";
 
-  const cookieStore = await cookies();
-  const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
-  const username = token?.split(".")[0] ?? "—";
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("ai_access_enabled, ai_request_count, ai_trial_limit")
+    .eq("id", user.id)
+    .single();
 
   const aiProvider = process.env.ACTIVE_AI_PROVIDER ?? "—";
   const aiModel =
     aiProvider === "openai" ? process.env.OPENAI_MODEL : process.env.ANTHROPIC_MODEL;
 
   return (
-    <div className="flex flex-col gap-6 px-4 py-6 max-w-2xl mx-auto w-full">
+    <div className="flex flex-col gap-6 px-4 py-6 max-w-4xl mx-auto w-full">
       <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
 
       <Card>
@@ -27,7 +29,7 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent className="flex flex-col gap-1 text-sm">
           <span className="text-muted-foreground">Logged in as</span>
-          <span className="text-foreground">{username}</span>
+          <span className="text-foreground">{accountLabel}</span>
         </CardContent>
       </Card>
 
@@ -47,6 +49,34 @@ export default async function SettingsPage() {
           <p className="mt-2 text-xs text-muted-foreground">
             Configured via environment variables, not editable here.
           </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>AI Access</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2 text-sm">
+          {profile?.ai_access_enabled ? (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Status</span>
+              <Badge>Full access</Badge>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Free trial requests used</span>
+              <span className="text-foreground tabular-nums">
+                {Math.min(profile?.ai_request_count ?? 0, profile?.ai_trial_limit ?? 5)} /{" "}
+                {profile?.ai_trial_limit ?? 5}
+              </span>
+            </div>
+          )}
+          {!profile?.ai_access_enabled &&
+            (profile?.ai_request_count ?? 0) >= (profile?.ai_trial_limit ?? 5) && (
+              <p className="text-xs text-destructive">
+                You&apos;ve used all your free requests. Ask an admin to enable full access.
+              </p>
+            )}
         </CardContent>
       </Card>
 

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { LayoutDashboard, MessageSquareText, Radar, BookOpen, CalendarCheck, Settings } from "lucide-react";
+import { LayoutDashboard, MessageSquareText, Radar, BookOpen, CalendarCheck, Settings, Users } from "lucide-react";
 
 export interface NavItem {
   href: string;
@@ -15,3 +15,8 @@ export const NAV_ITEMS: NavItem[] = [
   { href: "/plan", label: "Plan", icon: CalendarCheck },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+// Appended only for admins (see (app)/layout.tsx) - not part of NAV_ITEMS
+// itself since that array is also used for the non-role-aware mobile nav
+// item count/layout.
+export const ADMIN_NAV_ITEM: NavItem = { href: "/admin/users", label: "Users", icon: Users };

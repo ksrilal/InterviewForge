@@ -3,7 +3,7 @@
 import { mapQuestionRow } from "@/lib/mappers";
 import { getAIProvider } from "@/ai/provider";
 import { checkAIQuota, recordAIUsage } from "@/lib/ai/usage-gate";
-import type { InterviewLevel, InterviewType, Question } from "@/types/domain";
+import type { CodeLanguage, InterviewLevel, InterviewType, Question } from "@/types/domain";
 import type { QuestionRow } from "@/lib/supabase/types";
 import { requireUser } from "@/lib/auth/guard";
 
@@ -144,7 +144,8 @@ export async function generateAndSaveQuestion(
   level: InterviewLevel,
   interviewType: InterviewType,
   questionType: Question["questionType"],
-  topic?: string
+  topic?: string,
+  language?: CodeLanguage
 ): Promise<Question | null> {
   const { supabase, user } = await requireUser();
 
@@ -168,6 +169,7 @@ export async function generateAndSaveQuestion(
     level,
     interviewType,
     questionType,
+    language,
     topic,
     recentPromptTitles,
   });
@@ -189,6 +191,7 @@ export async function generateAndSaveQuestion(
       follow_up_seeds: generated.followUpSeeds,
       scoring_rubric: generated.scoringRubric,
       source: "ai_generated",
+      language: generated.language,
     })
     .select("*")
     .single();

@@ -1,5 +1,6 @@
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { mapQuestionRow } from "@/lib/mappers";
+import type { CodeLanguage, QuestionType } from "@/types/domain";
 import type { QuestionRow, SessionRow } from "@/lib/supabase/types";
 
 export interface SessionContext {
@@ -7,6 +8,9 @@ export interface SessionContext {
   category: string | null;
   difficulty: number | null;
   rootCount: number;
+  // Coding Workspace feature - null for every text question.
+  questionType: QuestionType | null;
+  language: CodeLanguage | null;
 }
 
 export async function getSessionContext(sessionId: string): Promise<SessionContext | null> {
@@ -32,6 +36,8 @@ export async function getSessionContext(sessionId: string): Promise<SessionConte
 
   let category: string | null = null;
   let difficulty: number | null = null;
+  let questionType: QuestionType | null = null;
+  let language: CodeLanguage | null = null;
 
   const questionId = (latestSq as { question_id: string | null } | null)?.question_id;
   if (questionId) {
@@ -44,8 +50,17 @@ export async function getSessionContext(sessionId: string): Promise<SessionConte
       const q = mapQuestionRow(question as QuestionRow);
       category = q.category;
       difficulty = q.difficulty;
+      questionType = q.questionType;
+      language = q.language;
     }
   }
 
-  return { session: sessionRow, category, difficulty, rootCount: rootCount ?? 0 };
+  return {
+    session: sessionRow,
+    category,
+    difficulty,
+    rootCount: rootCount ?? 0,
+    questionType,
+    language,
+  };
 }

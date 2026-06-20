@@ -2,17 +2,19 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/guard";
-import { pickRootQuestion, pickQuestionByTypeMix, pickQuestionInDomain } from "./question.actions";
+import { pickRootQuestion, pickQuestionByTypeMix, pickQuestionInDomain, getQuestionById } from "./question.actions";
 import { getAIProvider } from "@/ai/provider";
 import { checkAIQuota, recordAIUsage } from "@/lib/ai/usage-gate";
 import { MOCK_MODE_CONFIG } from "@/lib/scoring/mock-templates";
 import { computeReadinessVerdict } from "@/lib/scoring/readiness";
 import { writeSkillSnapshotsForSession } from "./radar.actions";
 import type {
+  CodeLanguage,
   CompanyType,
   InterviewerPersonality,
   InterviewLevel,
   InterviewType,
+  QuestionType,
   SessionMode,
   ActionResult,
 } from "@/types/domain";
@@ -22,6 +24,8 @@ export interface StartSessionResult {
   sessionId: string;
   firstSessionQuestionId: string;
   firstQuestionPrompt: string;
+  firstQuestionType: QuestionType;
+  firstQuestionLanguage: CodeLanguage | null;
 }
 
 export async function startSession(
@@ -30,7 +34,11 @@ export async function startSession(
   interviewType: InterviewType,
   mode: SessionMode,
   personality: InterviewerPersonality = "professional",
-  companyType: CompanyType | null = null
+  companyType: CompanyType | null = null,
+  // Set when starting from a specific question in the Question Bank
+  // ("Start Interview" on a question's detail page) - skips the random
+  // pick below and seeds the session with this exact question instead.
+  questionId?: string
 ): Promise<ActionResult<StartSessionResult>> {
   const { supabase } = await requireUser();
   const config = MOCK_MODE_CONFIG[mode];
@@ -72,11 +80,13 @@ export async function startSession(
   // forcing the type filter there just fails to find anything. Custom
   // domains always use the domain-wide pick regardless of mock mode.
   const firstTypeMix = isCustomDomain ? undefined : config.typeSequence[0];
-  const question = firstTypeMix
-    ? await pickQuestionByTypeMix(domainId, level, [firstTypeMix], [])
-    : isCustomDomain
-      ? await pickQuestionInDomain(domainId, level, [])
-      : await pickRootQuestion(domainId, level, interviewType, []);
+  const question = questionId
+    ? await getQuestionById(questionId)
+    : firstTypeMix
+      ? await pickQuestionByTypeMix(domainId, level, [firstTypeMix], [])
+      : isCustomDomain
+        ? await pickQuestionInDomain(domainId, level, [])
+        : await pickRootQuestion(domainId, level, interviewType, []);
 
   if (!question) {
     // Clean up the session row we just created - without this, a failed
@@ -112,8 +122,33 @@ export async function startSession(
       sessionId: sessionRow.id,
       firstSessionQuestionId: sq.id,
       firstQuestionPrompt: sq.prompt_text,
+      firstQuestionType: question.questionType,
+      firstQuestionLanguage: question.language,
     },
   };
+}
+
+// "Start Interview" from a single question in the Question Bank - skips the
+// setup form entirely and starts a Practice session seeded with exactly
+// this question, using the question's own domain/level/type so there's
+// nothing left to configure.
+export async function startSessionFromQuestion(questionId: string): Promise<ActionResult<StartSessionResult>> {
+  const question = await getQuestionById(questionId);
+  if (!question) {
+    return { ok: false, error: "Question not found." };
+  }
+
+  const interviewType = (question.interviewTypes[0] as InterviewType | undefined) ?? "backend";
+
+  return startSession(
+    question.domainId,
+    question.level,
+    interviewType,
+    "practice",
+    "professional",
+    null,
+    question.id
+  );
 }
 
 export interface EndSessionResult {

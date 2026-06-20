@@ -4,10 +4,16 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { requireUser } from "@/lib/auth/guard";
 import { getAIProvider, getFallbackAIProvider } from "@/ai/provider";
 import { checkAIQuota, recordAIUsage } from "@/lib/ai/usage-gate";
-import { mapAnswerRowToEvaluation, mapQuestionRow } from "@/lib/mappers";
+import { mapAnswerRowToEvaluation, mapAnswerRowToCodeReview, mapQuestionRow } from "@/lib/mappers";
 import { pickRootQuestion, pickQuestionByTypeMix, pickQuestionInDomain } from "./question.actions";
 import { MAX_FOLLOW_UPS_PER_THREAD, MOCK_MODE_CONFIG } from "@/lib/scoring/mock-templates";
-import type { ActionResult, Evaluation } from "@/types/domain";
+import type {
+  ActionResult,
+  CodeLanguage,
+  CodeReviewResult,
+  Evaluation,
+  QuestionType,
+} from "@/types/domain";
 import type {
   AnswerRow,
   QuestionRow,
@@ -21,9 +27,21 @@ export interface SubmitAnswerResult {
   nextStep: NextStep;
 }
 
+export interface SubmitCodeAnswerResult {
+  answerId: string;
+  codeReview: CodeReviewResult;
+  nextStep: NextStep;
+}
+
 export type NextStep =
   | { type: "FOLLOW_UP"; sessionQuestionId: string; prompt: string; depth: number }
-  | { type: "NEW_TOPIC"; sessionQuestionId: string; prompt: string }
+  | {
+      type: "NEW_TOPIC";
+      sessionQuestionId: string;
+      prompt: string;
+      questionType: QuestionType;
+      language: CodeLanguage | null;
+    }
   | { type: "SESSION_COMPLETE" };
 
 // Saves the answer FIRST (before any AI call), per docs/01-prd.md §7 - a
@@ -207,13 +225,189 @@ export async function evaluateAnswer(answerId: string): Promise<ActionResult<Eva
   return { ok: true, data: evaluation };
 }
 
+// Coding Workspace feature: parallel to submitAnswer, but for a code
+// submission - saves it as answer_kind "code", routes to the static
+// code-review pipeline instead of the rubric-based evaluateAnswer, and
+// never threads a follow-up off the result (see advanceSession).
+export async function submitCodeAnswer(
+  sessionQuestionId: string,
+  code: string,
+  language: CodeLanguage
+): Promise<ActionResult<SubmitCodeAnswerResult>> {
+  const { supabase } = await requireUser();
+
+  const { data: answer, error: insertError } = await supabase
+    .from("answers")
+    .insert({
+      session_question_id: sessionQuestionId,
+      answer_text: code,
+      answer_kind: "code",
+      answer_language: language,
+    })
+    .select("*")
+    .single();
+
+  if (insertError || !answer) {
+    return { ok: false, error: insertError?.message ?? "Failed to save code submission." };
+  }
+
+  const answerRow = answer as AnswerRow;
+
+  const reviewResult = await evaluateCodeAnswer(answerRow.id);
+  if (!reviewResult.ok || !reviewResult.data) {
+    return { ok: false, error: reviewResult.error ?? "Code review failed.", data: undefined };
+  }
+
+  const nextStep = await advanceSession(sessionQuestionId, code, null);
+
+  return {
+    ok: true,
+    data: { answerId: answerRow.id, codeReview: reviewResult.data, nextStep },
+  };
+}
+
+// Separated like evaluateAnswer, for the same retry-without-resubmitting reason.
+export async function evaluateCodeAnswer(answerId: string): Promise<ActionResult<CodeReviewResult>> {
+  const { supabase, user } = await requireUser();
+
+  const { data: answer, error: answerError } = await supabase
+    .from("answers")
+    .select("*")
+    .eq("id", answerId)
+    .single();
+  if (answerError || !answer) {
+    return { ok: false, error: "Answer not found." };
+  }
+  const answerRow = answer as AnswerRow;
+
+  if (!answerRow.answer_language) {
+    return { ok: false, error: "Missing language for code submission." };
+  }
+
+  const { data: sessionQuestion, error: sqError } = await supabase
+    .from("session_questions")
+    .select("*")
+    .eq("id", answerRow.session_question_id)
+    .single();
+  if (sqError || !sessionQuestion) {
+    return { ok: false, error: "Question context not found." };
+  }
+  const sq = sessionQuestion as SessionQuestionRow;
+
+  const { data: session } = await supabase
+    .from("sessions")
+    .select("level, interviewer_personality, company_type")
+    .eq("id", sq.session_id)
+    .single();
+  const sessionRow = session as Pick<
+    SessionRow,
+    "level" | "interviewer_personality" | "company_type"
+  > | null;
+
+  let questionContext: Pick<QuestionRow, "prompt" | "difficulty" | "level" | "scoring_rubric" | "common_mistakes">;
+
+  if (sq.question_id) {
+    const { data: question } = await supabase
+      .from("questions")
+      .select("*")
+      .eq("id", sq.question_id)
+      .single();
+    if (!question) return { ok: false, error: "Question not found." };
+    questionContext = question as QuestionRow;
+  } else {
+    questionContext = {
+      prompt: sq.prompt_text,
+      difficulty: 3,
+      level: sessionRow?.level ?? "mid",
+      scoring_rubric: {
+        correctness: "Solves the stated problem",
+        codeQuality: "Clean, idiomatic, maintainable",
+        edgeCases: "Handles edge cases and invalid input",
+      },
+      common_mistakes: [],
+    };
+  }
+
+  const reviewInput = {
+    question: {
+      prompt: sq.prompt_text,
+      difficulty: questionContext.difficulty,
+      level: questionContext.level,
+      scoringRubric: questionContext.scoring_rubric,
+      commonMistakes: questionContext.common_mistakes,
+    },
+    code: answerRow.answer_text,
+    language: answerRow.answer_language,
+    personality: sessionRow?.interviewer_personality,
+    companyType: sessionRow?.company_type,
+  };
+
+  try {
+    await checkAIQuota(user.id);
+  } catch (err) {
+    await supabase
+      .from("answers")
+      .update({ evaluation_error: (err as Error).message })
+      .eq("id", answerId);
+    return { ok: false, error: (err as Error).message };
+  }
+
+  let codeReview: CodeReviewResult;
+  let usedProvider = getAIProvider();
+  try {
+    codeReview = await usedProvider.reviewCode(reviewInput);
+    await recordAIUsage(user.id, usedProvider);
+  } catch (primaryError) {
+    const fallback = getFallbackAIProvider();
+    if (!fallback) {
+      await supabase
+        .from("answers")
+        .update({ evaluation_error: (primaryError as Error).message })
+        .eq("id", answerId);
+      return { ok: false, error: "Code review failed and no fallback provider is configured." };
+    }
+    try {
+      usedProvider = fallback;
+      codeReview = await fallback.reviewCode(reviewInput);
+      await recordAIUsage(user.id, usedProvider);
+    } catch (fallbackError) {
+      await supabase
+        .from("answers")
+        .update({ evaluation_error: (fallbackError as Error).message })
+        .eq("id", answerId);
+      return { ok: false, error: "Code review failed on both configured providers." };
+    }
+  }
+
+  const { error: updateError } = await supabase
+    .from("answers")
+    .update({
+      evaluated_at: new Date().toISOString(),
+      code_review: codeReview as unknown as Record<string, unknown>,
+      evaluation_error: null,
+      ai_provider: usedProvider.name,
+      ai_model: usedProvider.model,
+    })
+    .eq("id", answerId);
+
+  if (updateError) {
+    return { ok: false, error: updateError.message };
+  }
+
+  return { ok: true, data: codeReview };
+}
+
 // The adaptive follow-up engine (docs/01-prd.md Module 4): decides whether to
 // probe deeper on the same topic, pivot to a new one, or end the session.
 // The follow-up cap is enforced here in code, not just via the AI prompt.
+// evaluation is null for coding questions - a CodeReviewResult has no
+// numeric score to drive the AI follow-up decision against, so coding
+// questions always skip straight to the new-topic/session-complete branch
+// below (the same fallback path used when decideFollowUp itself fails).
 async function advanceSession(
   sessionQuestionId: string,
   answerText: string,
-  evaluation: Evaluation
+  evaluation: Evaluation | null
 ): Promise<NextStep> {
   const supabase = await getSupabaseServerClient();
 
@@ -257,7 +451,9 @@ async function advanceSession(
   const config = MOCK_MODE_CONFIG[sessionRow.mode];
   const reachedQuestionCap = (rootCount ?? 0) >= config.rootQuestionCount;
 
-  if (followUpCount >= MAX_FOLLOW_UPS_PER_THREAD) {
+  // Coding questions never thread follow-ups (no numeric evaluation to
+  // decide against) - always move on, same as hitting the follow-up cap.
+  if (followUpCount >= MAX_FOLLOW_UPS_PER_THREAD || evaluation === null) {
     return reachedQuestionCap
       ? { type: "SESSION_COMPLETE" }
       : await moveToNewTopic(sessionRow, rootCount ?? 0, isCustomDomain);
@@ -408,7 +604,13 @@ async function moveToNewTopic(
   }
 
   const newRow = newSq as SessionQuestionRow;
-  return { type: "NEW_TOPIC", sessionQuestionId: newRow.id, prompt: newRow.prompt_text };
+  return {
+    type: "NEW_TOPIC",
+    sessionQuestionId: newRow.id,
+    prompt: newRow.prompt_text,
+    questionType: question.questionType,
+    language: question.language,
+  };
 }
 
 export async function getEvaluationForAnswer(sessionQuestionId: string): Promise<Evaluation | null> {

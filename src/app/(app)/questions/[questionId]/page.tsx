@@ -2,6 +2,8 @@ import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getQuestionById } from "@/actions/question.actions";
+import { StartInterviewButton } from "./start-interview-button";
+import { BackButton } from "@/components/back-button";
 
 interface PageProps {
   params: Promise<{ questionId: string }>;
@@ -14,6 +16,8 @@ export default async function QuestionDetailPage({ params }: PageProps) {
 
   return (
     <div className="flex flex-col gap-4 px-4 py-6 max-w-4xl mx-auto w-full">
+      <BackButton />
+
       <div className="flex items-center gap-2">
         <Badge variant="secondary">{question.category}</Badge>
         <Badge variant="outline" className="capitalize">
@@ -22,7 +26,9 @@ export default async function QuestionDetailPage({ params }: PageProps) {
         <Badge variant="outline">Difficulty {question.difficulty}</Badge>
       </div>
 
-      <p className="text-lg leading-relaxed text-foreground">{question.prompt}</p>
+      <p className="text-lg leading-relaxed text-foreground whitespace-pre-wrap">{question.prompt}</p>
+
+      <StartInterviewButton questionId={question.id} />
 
       <Card>
         <CardContent className="flex flex-col gap-4">

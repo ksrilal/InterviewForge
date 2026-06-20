@@ -86,7 +86,7 @@ export default async function DomainQuestionsPage({
                 </Badge>
                 <Badge variant="outline">Difficulty {q.difficulty}</Badge>
               </div>
-              <p className="text-foreground">{q.prompt}</p>
+              <p className="text-foreground line-clamp-2 whitespace-pre-line">{q.prompt}</p>
             </Link>
           </li>
         ))}

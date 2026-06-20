@@ -37,6 +37,8 @@ export default async function InterviewSessionPage({ params }: PageProps) {
         sessionQuestionId: sq.id,
         prompt: sq.prompt_text,
         followUpDepth: sq.follow_up_depth,
+        questionType: context.questionType ?? undefined,
+        language: context.language,
       }}
       initialCategory={context.category}
       initialDifficulty={context.difficulty}

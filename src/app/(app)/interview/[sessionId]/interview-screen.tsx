@@ -15,19 +15,27 @@ import {
 } from "@/components/ui/dialog";
 import { QuestionCard } from "@/components/interview/question-card";
 import { AnswerInput } from "@/components/interview/answer-input";
+import { CodeEditor } from "@/components/interview/code-editor";
 import { EvaluationPanel } from "@/components/interview/evaluation-panel";
+import { CodeReviewPanel } from "@/components/interview/code-review-panel";
 import { ThreadProgress } from "@/components/interview/thread-progress";
 import { SessionTimer } from "@/components/interview/session-timer";
 import { useInterviewSessionStore } from "@/store/interview-session.store";
-import { submitAnswer } from "@/actions/answer.actions";
+import { submitAnswer, submitCodeAnswer } from "@/actions/answer.actions";
 import { endSession } from "@/actions/session.actions";
-import type { InterviewLevel, SessionMode } from "@/types/domain";
+import type { CodeLanguage, InterviewLevel, QuestionType, SessionMode } from "@/types/domain";
 
 interface InterviewScreenProps {
   sessionId: string;
   startedAt: string;
   timeLimitSeconds: number | null;
-  initialQuestion: { sessionQuestionId: string; prompt: string; followUpDepth: number };
+  initialQuestion: {
+    sessionQuestionId: string;
+    prompt: string;
+    followUpDepth: number;
+    questionType?: QuestionType;
+    language?: CodeLanguage | null;
+  };
   initialCategory: string | null;
   initialDifficulty: number | null;
   initialRootCount: number;
@@ -54,13 +62,17 @@ export function InterviewScreen({
     sessionId: storedSessionId,
     currentQuestion,
     draftAnswer,
+    draftLanguage,
     status,
     lastEvaluation,
+    lastCodeReview,
     evaluationError,
     initSession,
     setDraftAnswer,
+    setDraftLanguage,
     startEvaluating,
     receiveEvaluation,
+    receiveCodeReview,
     setEvaluationError,
     advanceToQuestion,
     completeSession,
@@ -73,6 +85,32 @@ export function InterviewScreen({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  const isCodingQuestion = currentQuestion?.questionType === "coding";
+
+  function applyNextStep(nextStep: { type: "FOLLOW_UP" | "NEW_TOPIC" | "SESSION_COMPLETE"; sessionQuestionId?: string; prompt?: string; depth?: number; questionType?: QuestionType; language?: CodeLanguage | null }) {
+    if (nextStep.type === "FOLLOW_UP") {
+      setPendingNext({
+        sessionQuestionId: nextStep.sessionQuestionId!,
+        prompt: nextStep.prompt!,
+        followUpDepth: nextStep.depth!,
+        questionType: undefined,
+        language: null,
+      });
+    } else if (nextStep.type === "NEW_TOPIC") {
+      setRootCount((c) => c + 1);
+      setPendingNext({
+        sessionQuestionId: nextStep.sessionQuestionId!,
+        prompt: nextStep.prompt!,
+        followUpDepth: 0,
+        questionType: nextStep.questionType,
+        language: nextStep.language,
+      });
+    } else {
+      setPendingNext(null);
+      setSessionComplete(true);
+    }
+  }
+
   function handleSubmit() {
     if (!currentQuestion) return;
     startEvaluating();
@@ -83,24 +121,21 @@ export function InterviewScreen({
         return;
       }
       receiveEvaluation(result.data.evaluation);
+      applyNextStep(result.data.nextStep);
+    });
+  }
 
-      if (result.data.nextStep.type === "FOLLOW_UP") {
-        setPendingNext({
-          sessionQuestionId: result.data.nextStep.sessionQuestionId,
-          prompt: result.data.nextStep.prompt,
-          followUpDepth: result.data.nextStep.depth,
-        });
-      } else if (result.data.nextStep.type === "NEW_TOPIC") {
-        setRootCount((c) => c + 1);
-        setPendingNext({
-          sessionQuestionId: result.data.nextStep.sessionQuestionId,
-          prompt: result.data.nextStep.prompt,
-          followUpDepth: 0,
-        });
-      } else {
-        setPendingNext(null);
-        setSessionComplete(true);
+  function handleSubmitCode() {
+    if (!currentQuestion || !draftLanguage) return;
+    startEvaluating();
+    startTransition(async () => {
+      const result = await submitCodeAnswer(currentQuestion.sessionQuestionId, draftAnswer, draftLanguage);
+      if (!result.ok || !result.data) {
+        setEvaluationError(result.error ?? "Code review failed. Your submission was saved.");
+        return;
       }
+      receiveCodeReview(result.data.codeReview);
+      applyNextStep(result.data.nextStep);
     });
   }
 
@@ -162,23 +197,46 @@ export function InterviewScreen({
             />
           )}
 
-          {(status === "answering" || status === "evaluating") && (
-            <AnswerInput
-              value={draftAnswer}
-              onChange={setDraftAnswer}
-              onSubmit={handleSubmit}
-              disabled={status === "evaluating"}
-              isPending={isPending || status === "evaluating"}
-            />
-          )}
+          {(status === "answering" || status === "evaluating") &&
+            (isCodingQuestion ? (
+              <div className="flex flex-col gap-3">
+                <CodeEditor
+                  value={draftAnswer}
+                  onChange={setDraftAnswer}
+                  language={draftLanguage ?? "javascript"}
+                  onLanguageChange={setDraftLanguage}
+                  disabled={status === "evaluating"}
+                />
+                <Button
+                  onClick={handleSubmitCode}
+                  size="lg"
+                  className="sticky bottom-20 md:bottom-0 w-full"
+                  disabled={status === "evaluating" || isPending || draftAnswer.trim().length === 0}
+                >
+                  {isPending || status === "evaluating" ? "Reviewing..." : "Submit Code"}
+                </Button>
+              </div>
+            ) : (
+              <AnswerInput
+                value={draftAnswer}
+                onChange={setDraftAnswer}
+                onSubmit={handleSubmit}
+                disabled={status === "evaluating"}
+                isPending={isPending || status === "evaluating"}
+              />
+            ))}
 
           {evaluationError && <p className="text-sm text-destructive">{evaluationError}</p>}
         </>
       )}
 
-      {status === "showing_result" && lastEvaluation && (
+      {status === "showing_result" && (lastEvaluation || lastCodeReview) && (
         <div className="flex flex-col gap-4">
-          <EvaluationPanel evaluation={lastEvaluation} />
+          {lastCodeReview ? (
+            <CodeReviewPanel review={lastCodeReview} />
+          ) : (
+            lastEvaluation && <EvaluationPanel evaluation={lastEvaluation} />
+          )}
           <div className="flex flex-col gap-2">
             <Button onClick={handleContinue} size="lg" disabled={isPending}>
               {sessionComplete ? "View Summary" : "Continue"}

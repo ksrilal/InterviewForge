@@ -7,12 +7,14 @@ import type {
   ExtractKnowledgeInput,
   GenerateQuestionInput,
   GenerateTrainingPlanInput,
+  ReviewCodeInput,
 } from "../provider";
 import { buildEvaluationPrompt } from "../prompts/evaluation.prompt";
 import { buildFollowUpPrompt } from "../prompts/followup.prompt";
 import { buildQuestionGenerationPrompt } from "../prompts/question-generation.prompt";
 import { buildTrainingPlanPrompt } from "../prompts/training-plan.prompt";
 import { buildKnowledgeExtractionPrompt } from "../prompts/knowledge-extraction.prompt";
+import { buildCodeReviewPrompt } from "../prompts/code-review.prompt";
 import {
   EvaluationSchema,
   FollowUpDecisionSchema,
@@ -20,9 +22,11 @@ import {
   KnowledgeExtractionSchema,
   FreeformKnowledgeExtractionSchema,
   TrainingPlanSchema,
+  CodeReviewSchema,
 } from "../schemas/ai-response.schemas";
 import { AIResponseValidationError, parseAndValidate } from "../parse-json-response";
 import type {
+  CodeReviewResult,
   Evaluation,
   FollowUpDecision,
   GeneratedQuestion,
@@ -119,5 +123,10 @@ Respond again with ONLY the corrected JSON object, no markdown, no commentary.`;
     const { system, user } = buildKnowledgeExtractionPrompt(input);
     const schema = input.isCustomDomain ? FreeformKnowledgeExtractionSchema : KnowledgeExtractionSchema;
     return this.callAndValidate(system, user, schema);
+  }
+
+  async reviewCode(input: ReviewCodeInput): Promise<CodeReviewResult> {
+    const { system, user } = buildCodeReviewPrompt(input);
+    return this.callAndValidate(system, user, CodeReviewSchema);
   }
 }

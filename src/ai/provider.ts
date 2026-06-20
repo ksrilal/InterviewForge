@@ -1,4 +1,6 @@
 import type {
+  CodeLanguage,
+  CodeReviewResult,
   CompanyType,
   Evaluation,
   FollowUpDecision,
@@ -47,6 +49,8 @@ export interface GenerateQuestionInput {
   level: InterviewLevel;
   interviewType: InterviewType;
   questionType: QuestionType;
+  // Required when questionType is "coding".
+  language?: CodeLanguage;
   topic?: string;
   recentPromptTitles: string[];
   personality?: InterviewerPersonality;
@@ -68,6 +72,25 @@ export interface ExtractKnowledgeInput {
   domainDescription?: string;
   sourceText: string;
   isCustomDomain: boolean;
+  // Coding Workspace feature - biases any generated "coding" questions
+  // toward the user's stated stack (Settings > Coding Preferences) instead
+  // of a random language pick. Empty if the user hasn't set any.
+  preferredLanguages?: string[];
+  preferredFrameworks?: string[];
+}
+
+export interface ReviewCodeInput {
+  question: {
+    prompt: string;
+    difficulty: number;
+    level: InterviewLevel;
+    scoringRubric: Record<string, string>;
+    commonMistakes: string[];
+  };
+  code: string;
+  language: CodeLanguage;
+  personality?: InterviewerPersonality;
+  companyType?: CompanyType | null;
 }
 
 export interface AIUsage {
@@ -83,6 +106,11 @@ export interface AIProvider {
   generateQuestion(input: GenerateQuestionInput): Promise<GeneratedQuestion>;
   generateTrainingPlan(input: GenerateTrainingPlanInput): Promise<TrainingPlan>;
   extractKnowledge(input: ExtractKnowledgeInput): Promise<KnowledgeExtractionResult>;
+  // Static code review only - see code-review.prompt.ts. Never claims
+  // execution; kept as its own method/result type so a future real
+  // execution engine (Judge0/Piston) can be added as a separate method
+  // without reshaping this one.
+  reviewCode(input: ReviewCodeInput): Promise<CodeReviewResult>;
   // Token usage from the most recently completed call on this instance
   // (summed across the repair-retry attempt if one happened). Read this
   // immediately after awaiting one of the methods above - getAIProvider()

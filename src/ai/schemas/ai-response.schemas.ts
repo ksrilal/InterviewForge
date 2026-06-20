@@ -17,6 +17,22 @@ export const EvaluationSchema = z.object({
   interviewerFeedback: z.string(),
 });
 
+// Coding Workspace feature - a static, read-through code review. Every
+// field must map to one of three disclosed labels (AI Code Review, Static
+// Analysis, Interview Evaluation) and must never imply the code was run.
+export const CodeReviewSchema = z.object({
+  overallAssessment: z.string(),
+  syntaxIssues: z.array(z.string()),
+  bugs: z.array(z.string()),
+  performanceConcerns: z.array(z.string()),
+  securityConcerns: z.array(z.string()),
+  maintainabilityFeedback: z.array(z.string()),
+  codeQualityNotes: z.array(z.string()),
+  suggestedImprovements: z.array(z.string()),
+  exampleOptimizedSolution: z.string(),
+  interviewerFeedback: z.string(),
+});
+
 export const FollowUpDecisionSchema = z.object({
   action: z.enum(["ASK_FOLLOW_UP", "NEW_TOPIC", "END_SESSION"]),
   followUpPrompt: z.string().optional(),
@@ -49,6 +65,18 @@ const QuestionTypeSchema = z.enum([
   "architecture",
   "system_design",
   "behavioral",
+  "coding",
+]);
+
+const CodeLanguageSchema = z.enum([
+  "csharp",
+  "java",
+  "python",
+  "javascript",
+  "typescript",
+  "sql",
+  "go",
+  "cpp",
 ]);
 
 const SkillAxisSchema = z.enum([
@@ -77,6 +105,10 @@ export const GeneratedQuestionSchema = z.object({
   commonMistakes: z.array(z.string()),
   followUpSeeds: z.array(z.string()),
   scoringRubric: z.record(z.string(), z.string()),
+  // Only meaningful when questionType is "coding" - the AI is instructed to
+  // set this null otherwise (see question-generation/knowledge-extraction
+  // prompts).
+  language: CodeLanguageSchema.nullable(),
 });
 
 export const KnowledgeExtractionSchema = z.object({

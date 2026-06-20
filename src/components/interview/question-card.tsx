@@ -18,7 +18,7 @@ export function QuestionCard({ prompt, category, difficulty, children }: Questio
             {difficulty && <Badge variant="outline">Difficulty {difficulty}</Badge>}
           </div>
         )}
-        <p className="text-lg leading-relaxed text-foreground">{prompt}</p>
+        <p className="text-lg leading-relaxed text-foreground whitespace-pre-wrap">{prompt}</p>
         {children}
       </CardContent>
     </Card>

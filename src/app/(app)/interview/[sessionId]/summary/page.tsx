@@ -103,7 +103,7 @@ export default async function SessionSummaryPage({ params }: PageProps) {
             <Card key={root.id}>
               <CardContent className="flex flex-col gap-2">
                 <div className="flex items-start justify-between gap-2">
-                  <p className="text-sm font-medium flex-1">{root.prompt_text}</p>
+                  <p className="text-sm font-medium flex-1 whitespace-pre-wrap">{root.prompt_text}</p>
                   {rootAnswer?.overall_score != null && (
                     <span className="text-sm font-semibold tabular-nums shrink-0">
                       {Math.round(rootAnswer.overall_score)}
@@ -114,7 +114,7 @@ export default async function SessionSummaryPage({ params }: PageProps) {
                   const fuAnswer = answerBySq.get(fu.id);
                   return (
                     <div key={fu.id} className="flex items-start justify-between gap-2 pl-4 border-l border-border">
-                      <p className="text-sm text-muted-foreground flex-1">
+                      <p className="text-sm text-muted-foreground flex-1 whitespace-pre-wrap">
                         Follow-up {fu.follow_up_depth}: {fu.prompt_text}
                       </p>
                       {fuAnswer?.overall_score != null && (

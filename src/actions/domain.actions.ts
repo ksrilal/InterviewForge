@@ -115,6 +115,12 @@ async function ingestKnowledgeSource(
   }
   const sourceRow = source as KnowledgeSourceRow;
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("preferred_languages, preferred_frameworks")
+    .eq("id", userId)
+    .single();
+
   const provider = getAIProvider();
   let result;
   try {
@@ -124,6 +130,8 @@ async function ingestKnowledgeSource(
       domainDescription: domain.description ?? undefined,
       sourceText: rawText,
       isCustomDomain: domain.owner_user_id !== null,
+      preferredLanguages: profile?.preferred_languages ?? [],
+      preferredFrameworks: profile?.preferred_frameworks ?? [],
     });
     await recordAIUsage(userId, provider);
   } catch (err) {
@@ -155,6 +163,7 @@ async function ingestKnowledgeSource(
         source: "ai_generated",
         owner_user_id: domain.owner_user_id,
         domain_id: domain.id,
+        language: generated.language,
       })
       .select("id")
       .single();
@@ -262,11 +271,10 @@ export async function addKnowledgeToDomain(
 
 // RLS (owner_delete_domains) already prevents deleting domains this account
 // doesn't own, including the global seed domain - no extra check needed here.
-// questions.domain_id has no ON DELETE CASCADE, so its rows are deleted
-// first (also owner-scoped by RLS, so this can't touch anyone else's data).
+// questions/sessions/skill_score_events/skill_snapshots all cascade-delete
+// on domain_id (see migration 0014), so this is a single atomic delete.
 export async function deleteDomain(domainId: string): Promise<ActionResult<void>> {
   const { supabase } = await requireUser();
-  await supabase.from("questions").delete().eq("domain_id", domainId);
   const { error } = await supabase.from("domains").delete().eq("id", domainId);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/questions");

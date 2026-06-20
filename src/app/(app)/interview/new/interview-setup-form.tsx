@@ -143,6 +143,8 @@ export function InterviewSetupForm({ domains, defaultDomainId }: InterviewSetupF
         sessionQuestionId: result.data.firstSessionQuestionId,
         prompt: result.data.firstQuestionPrompt,
         followUpDepth: 0,
+        questionType: result.data.firstQuestionType,
+        language: result.data.firstQuestionLanguage,
       });
       router.push(`/interview/${result.data.sessionId}`);
     });

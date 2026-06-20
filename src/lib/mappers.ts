@@ -1,9 +1,10 @@
 import type { QuestionRow, AnswerRow } from "@/lib/supabase/types";
-import type { Question, Evaluation } from "@/types/domain";
+import type { Question, Evaluation, CodeReviewResult } from "@/types/domain";
 
 export function mapQuestionRow(row: QuestionRow): Question {
   return {
     id: row.id,
+    domainId: row.domain_id,
     category: row.category,
     topic: row.topic,
     questionType: row.question_type,
@@ -17,6 +18,7 @@ export function mapQuestionRow(row: QuestionRow): Question {
     followUpSeeds: row.follow_up_seeds,
     scoringRubric: row.scoring_rubric,
     source: row.source,
+    language: row.language,
   };
 }
 
@@ -38,4 +40,9 @@ export function mapAnswerRowToEvaluation(row: AnswerRow): Evaluation | null {
     suggestedAnswer: row.suggested_answer ?? "",
     interviewerFeedback: row.interviewer_feedback ?? "",
   };
+}
+
+export function mapAnswerRowToCodeReview(row: AnswerRow): CodeReviewResult | null {
+  if (!row.code_review) return null;
+  return row.code_review as unknown as CodeReviewResult;
 }

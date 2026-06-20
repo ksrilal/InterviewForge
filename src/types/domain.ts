@@ -2,6 +2,7 @@ export type {
   InterviewLevel,
   InterviewType,
   QuestionType,
+  CodeLanguage,
   SessionMode,
   SessionStatus,
   SessionVerdict,
@@ -10,10 +11,11 @@ export type {
   CompanyType,
 } from "@/lib/supabase/types";
 
-import type { InterviewLevel, QuestionType, SkillAxis } from "@/lib/supabase/types";
+import type { InterviewLevel, QuestionType, SkillAxis, CodeLanguage } from "@/lib/supabase/types";
 
 export interface Question {
   id: string;
+  domainId: string;
   category: string;
   topic: string;
   questionType: QuestionType;
@@ -31,6 +33,8 @@ export interface Question {
   followUpSeeds: string[];
   scoringRubric: Record<string, string>;
   source: "seed" | "ai_generated" | "manual";
+  // Only set when questionType is "coding".
+  language: CodeLanguage | null;
 }
 
 export interface Evaluation {
@@ -47,6 +51,26 @@ export interface Evaluation {
   weaknesses: string[];
   missingConcepts: string[];
   suggestedAnswer: string;
+  interviewerFeedback: string;
+}
+
+// Output of the AI Code Review pipeline (Coding Workspace feature) - a
+// static, read-through review of submitted code, deliberately NOT modeled
+// as "did this compile/run". Every field here must be presentable under one
+// of three labels: AI Code Review, Static Analysis, Interview Evaluation
+// (see code-review.prompt.ts and CodeReviewPanel). Architected separately
+// from Evaluation so a future real execution engine (Judge0/Piston) can add
+// its own result type alongside this one without reshaping it.
+export interface CodeReviewResult {
+  overallAssessment: string;
+  syntaxIssues: string[];
+  bugs: string[];
+  performanceConcerns: string[];
+  securityConcerns: string[];
+  maintainabilityFeedback: string[];
+  codeQualityNotes: string[];
+  suggestedImprovements: string[];
+  exampleOptimizedSolution: string;
   interviewerFeedback: string;
 }
 
@@ -70,6 +94,8 @@ export interface GeneratedQuestion {
   commonMistakes: string[];
   followUpSeeds: string[];
   scoringRubric: Record<string, string>;
+  // Only set when questionType is "coding".
+  language: CodeLanguage | null;
 }
 
 export interface KnowledgeExtractionResult {

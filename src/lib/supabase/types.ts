@@ -26,7 +26,22 @@ export type QuestionType =
   | "debugging"
   | "architecture"
   | "system_design"
-  | "behavioral";
+  | "behavioral"
+  | "coding";
+
+// Languages the Monaco editor offers for coding questions/answers. Free
+// text in the DB (not a Postgres enum) since this list is expected to grow
+// faster than a migration cycle - validated at the application layer
+// instead (see CodeLanguageSchema in ai-response.schemas.ts).
+export type CodeLanguage =
+  | "csharp"
+  | "java"
+  | "python"
+  | "javascript"
+  | "typescript"
+  | "sql"
+  | "go"
+  | "cpp";
 
 export type SessionMode = "practice" | "mock_15" | "mock_30" | "mock_60";
 
@@ -82,6 +97,9 @@ export type QuestionRow = {
   // bank); set = privately owned by the user who generated/authored it.
   owner_user_id: string | null;
   domain_id: string;
+  // Which language this coding question expects (e.g. "python"). Null for
+  // every non-coding question_type.
+  language: CodeLanguage | null;
   created_at: string;
   updated_at: string;
 };
@@ -103,6 +121,12 @@ export type ProfileRow = {
   ai_request_count: number;
   is_disabled: boolean;
   created_at: string;
+  // Coding Workspace feature - biases AI-generated coding questions toward
+  // the user's actual stack instead of a random language. Free text (not
+  // CodeLanguage/a fixed enum) so a user can list more than the editor's
+  // supported languages, and so frameworks/tools have somewhere to go too.
+  preferred_languages: string[];
+  preferred_frameworks: string[];
 };
 
 export type AIUsageEventRow = {
@@ -193,6 +217,17 @@ export type AnswerRow = {
   session_question_id: string;
   answer_text: string;
   submitted_at: string;
+
+  // "code" routes evaluation to the static code-review pipeline instead of
+  // the text rubric pipeline below - see evaluateCodeAnswer() in
+  // answer.actions.ts. Defaults to "text" for every pre-existing row.
+  answer_kind: "text" | "code";
+  answer_language: CodeLanguage | null;
+  // Structured CodeReviewResult (see types/domain.ts) stored as jsonb -
+  // left loosely typed here (this file has no dependency on domain.ts) and
+  // cast to CodeReviewResult at the call site, same convention as
+  // scoring_rubric/summary elsewhere in this file.
+  code_review: Record<string, unknown> | null;
 
   evaluated_at: string | null;
   overall_score: number | null;

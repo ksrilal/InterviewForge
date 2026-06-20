@@ -1,6 +1,8 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/guard";
+import type { ActionResult } from "@/types/domain";
 
 export interface ResetDataResult {
   ok: boolean;
@@ -39,5 +41,26 @@ export async function resetAllData(): Promise<ResetDataResult> {
     return { ok: false, error: plansError.message };
   }
 
+  return { ok: true };
+}
+
+// Coding Workspace feature: lets a user state their preferred languages
+// (from the editor's supported list) and frameworks/tools (free text, e.g.
+// Angular, .NET, PostgreSQL), used to bias AI-generated coding questions
+// toward their actual stack instead of a random pick.
+export async function updatePreferredStack(
+  languages: string[],
+  frameworks: string[]
+): Promise<ActionResult<void>> {
+  const { supabase, user } = await requireUser();
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ preferred_languages: languages, preferred_frameworks: frameworks })
+    .eq("id", user.id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/settings");
   return { ok: true };
 }

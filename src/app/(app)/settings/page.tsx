@@ -2,6 +2,7 @@ import { requireUser } from "@/lib/auth/guard";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ResetDataButton } from "./reset-data-button";
+import { PreferredStackForm } from "./preferred-stack-form";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,9 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("role, ai_access_enabled, ai_request_count, ai_trial_limit")
+    .select(
+      "role, ai_access_enabled, ai_request_count, ai_trial_limit, preferred_languages, preferred_frameworks"
+    )
     .eq("id", user.id)
     .single();
   const isAdmin = profile?.role === "admin";
@@ -80,6 +83,18 @@ export default async function SettingsPage() {
                 You&apos;ve used all your free requests. Ask an admin to enable full access.
               </p>
             )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Coding Preferences</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PreferredStackForm
+            initialLanguages={profile?.preferred_languages ?? []}
+            initialFrameworks={profile?.preferred_frameworks ?? []}
+          />
         </CardContent>
       </Card>
 

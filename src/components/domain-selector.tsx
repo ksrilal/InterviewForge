@@ -1,6 +1,8 @@
 "use client";
 
+import { useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2Icon } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { setLastDomainCookie, type DomainSummary } from "@/actions/domain.actions";
 
@@ -18,16 +20,20 @@ interface DomainSelectorProps {
 // resetting to the global domain.
 export function DomainSelector({ domains, selectedDomainId, basePath }: DomainSelectorProps) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
 
   function handleChange(domainId: string) {
     setLastDomainCookie(domainId);
-    router.push(`${basePath}?domain=${domainId}`);
+    startTransition(() => {
+      router.push(`${basePath}?domain=${domainId}`);
+    });
   }
 
   return (
     <Select
       value={selectedDomainId}
       onValueChange={(v) => v && handleChange(v)}
+      disabled={isPending}
     >
       <SelectTrigger className="w-full sm:w-64">
         <SelectValue placeholder="Select a domain">
@@ -36,6 +42,7 @@ export function DomainSelector({ domains, selectedDomainId, basePath }: DomainSe
             return d ? `${d.name}${d.isCustom ? " (private)" : ""}` : "Select a domain";
           }}
         </SelectValue>
+        {isPending && <Loader2Icon className="size-3.5 animate-spin text-muted-foreground" />}
       </SelectTrigger>
       <SelectContent>
         {domains.map((d) => (

@@ -148,26 +148,29 @@ export async function getLatestSkillSnapshots(domainId: string): Promise<SkillSn
   const { supabase } = await requireUser();
   const axes = await resolveDomainAxes(supabase, domainId);
 
-  const results: SkillSnapshotSummary[] = [];
-  for (const axis of axes) {
-    const { data } = await supabase
-      .from("skill_snapshots")
-      .select("*")
-      .eq("domain_id", domainId)
-      .eq("skill_axis", axis)
-      .order("snapshot_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+  // One query per axis, but they're independent - running them in parallel
+  // instead of awaiting each in a loop turns N sequential round-trips into
+  // one batch, which was the single biggest contributor to dashboard/radar
+  // load time (an axis count of ~9 meant ~9x the necessary latency here).
+  const rows = await Promise.all(
+    axes.map((axis) =>
+      supabase
+        .from("skill_snapshots")
+        .select("*")
+        .eq("domain_id", domainId)
+        .eq("skill_axis", axis)
+        .order("snapshot_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => data as SkillSnapshotRow | null)
+    )
+  );
 
-    const row = data as SkillSnapshotRow | null;
-    results.push({
-      axis,
-      rollingAverage: row?.rolling_average ?? 0,
-      sampleCount: row?.sample_count ?? 0,
-    });
-  }
-
-  return results;
+  return axes.map((axis, i) => ({
+    axis,
+    rollingAverage: rows[i]?.rolling_average ?? 0,
+    sampleCount: rows[i]?.sample_count ?? 0,
+  }));
 }
 
 export async function getSkillTrend(

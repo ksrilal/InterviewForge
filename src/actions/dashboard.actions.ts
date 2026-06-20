@@ -30,35 +30,36 @@ export interface DashboardData {
 export async function getDashboardData(domainId: string): Promise<DashboardData> {
   const { supabase } = await requireUser();
 
-  const { data: domain } = await supabase
-    .from("domains")
-    .select("owner_user_id")
-    .eq("id", domainId)
-    .single();
+  // None of these four depend on each other's results (getLatestSkillSnapshots
+  // only needs domainId, not the sessions data) - running them in parallel
+  // instead of awaiting one after another was the main cause of the
+  // dashboard taking 3+ seconds to load per domain switch.
+  const [{ data: domain }, { data: inProgress }, { data: sessions }, snapshots] = await Promise.all([
+    supabase.from("domains").select("owner_user_id").eq("id", domainId).single(),
+    supabase
+      .from("sessions")
+      .select("*")
+      .eq("domain_id", domainId)
+      .eq("status", "in_progress")
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("sessions")
+      .select("*")
+      .eq("domain_id", domainId)
+      .order("started_at", { ascending: false })
+      .limit(3),
+    getLatestSkillSnapshots(domainId),
+  ]);
+
   const isCustomDomain = !!(domain as Pick<DomainRow, "owner_user_id"> | null)?.owner_user_id;
-
-  const { data: inProgress } = await supabase
-    .from("sessions")
-    .select("*")
-    .eq("domain_id", domainId)
-    .eq("status", "in_progress")
-    .order("started_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
   const inProgressRow = inProgress as SessionRow | null;
-
-  const { data: sessions } = await supabase
-    .from("sessions")
-    .select("*")
-    .eq("domain_id", domainId)
-    .order("started_at", { ascending: false })
-    .limit(3);
 
   const sessionRows = (sessions ?? []) as SessionRow[];
   const latestCompletedLevel = sessionRows.find((s) => s.status === "completed")?.level;
   const latestLevel = inProgressRow?.level ?? latestCompletedLevel ?? "senior";
 
-  const snapshots = await getLatestSkillSnapshots(domainId);
   const hasAnyData = snapshots.some((s) => s.sampleCount > 0);
   const readinessScore = hasAnyData ? computeWeightedReadiness(snapshots, latestLevel) : 0;
 

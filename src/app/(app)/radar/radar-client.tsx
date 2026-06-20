@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { SkillRadarChart } from "@/components/radar/skill-radar-chart";
 import { SkillTrendChart } from "@/components/radar/skill-trend-chart";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -41,7 +42,7 @@ interface RadarClientProps {
 export function RadarClient({ snapshots, domainId }: RadarClientProps) {
   const [selectedAxis, setSelectedAxis] = useState<string | undefined>(snapshots[0]?.axis);
   const [trend, setTrend] = useState<{ date: string; value: number }[]>([]);
-  const [, startTransition] = useTransition();
+  const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
     if (!selectedAxis) return;
@@ -78,7 +79,7 @@ export function RadarClient({ snapshots, domainId }: RadarClientProps) {
             ))}
           </SelectContent>
         </Select>
-        <SkillTrendChart data={trend} />
+        {isPending ? <Skeleton className="h-56 w-full rounded-xl" /> : <SkillTrendChart data={trend} />}
       </div>
 
       <div className="flex flex-col gap-1">

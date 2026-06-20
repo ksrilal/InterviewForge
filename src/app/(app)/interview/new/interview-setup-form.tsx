@@ -8,6 +8,7 @@ import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -106,7 +107,7 @@ export function InterviewSetupForm({ domains, defaultDomainId }: InterviewSetupF
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [availableLevels, setAvailableLevels] = useState<InterviewLevel[]>(LEVELS.map((l) => l.value));
-  const [, startLevelsTransition] = useTransition();
+  const [isLevelsPending, startLevelsTransition] = useTransition();
   const initSession = useInterviewSessionStore((s) => s.initSession);
 
   const fallbackDomain = domains.find((d) => !d.isCustom) ?? domains[0];
@@ -185,7 +186,7 @@ export function InterviewSetupForm({ domains, defaultDomainId }: InterviewSetupF
       <div className="flex flex-col gap-3">
         <Label className="text-sm font-medium">Domain</Label>
         <Select value={domainId} onValueChange={(v) => v && form.setValue("domainId", v)}>
-          <SelectTrigger>
+          <SelectTrigger className="w-full sm:w-64">
             <SelectValue placeholder="Select a domain">
               {(value: string | null) => {
                 const d = domains.find((domain) => domain.id === value);
@@ -202,36 +203,43 @@ export function InterviewSetupForm({ domains, defaultDomainId }: InterviewSetupF
             ))}
           </SelectContent>
         </Select>
-        {isCustomDomain && (
-          <p className="text-xs text-muted-foreground">
-            Custom domains draw questions from your own uploaded content - level still applies,
-            but there&apos;s no fixed Type breakdown for it.
-          </p>
-        )}
       </div>
 
       <div className="flex flex-col gap-3">
         <Label className="text-sm font-medium">Level</Label>
-        <RadioGroup
-          value={level}
-          onValueChange={(v) => form.setValue("level", v as SetupValues["level"])}
-          className="grid grid-cols-2 gap-2 sm:grid-cols-3"
-        >
-          {LEVELS.filter((l) => availableLevels.includes(l.value)).map((l) => (
-            <label
-              key={l.value}
-              className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm cursor-pointer hover:bg-accent/40"
-            >
-              <RadioGroupItem value={l.value} />
-              {l.label}
-            </label>
-          ))}
-        </RadioGroup>
+        {isLevelsPending ? (
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-9 w-full rounded-md" />
+            ))}
+          </div>
+        ) : (
+          <RadioGroup
+            value={level}
+            onValueChange={(v) => form.setValue("level", v as SetupValues["level"])}
+            className="grid grid-cols-2 gap-2 sm:grid-cols-3"
+          >
+            {LEVELS.filter((l) => availableLevels.includes(l.value)).map((l) => (
+              <label
+                key={l.value}
+                className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm cursor-pointer hover:bg-accent/40"
+              >
+                <RadioGroupItem value={l.value} />
+                {l.label}
+              </label>
+            ))}
+          </RadioGroup>
+        )}
       </div>
 
-      {!isCustomDomain && (
-        <div className="flex flex-col gap-3">
-          <Label className="text-sm font-medium">Type</Label>
+      <div className="flex flex-col gap-3">
+        <Label className="text-sm font-medium">Type</Label>
+        {isCustomDomain ? (
+          <p className="text-xs text-muted-foreground">
+            Custom domains draw questions from your own uploaded content - level still applies,
+            but there&apos;s no fixed Type breakdown for it.
+          </p>
+        ) : (
           <RadioGroup
             value={interviewType}
             onValueChange={(v) => form.setValue("interviewType", v as SetupValues["interviewType"])}
@@ -247,8 +255,8 @@ export function InterviewSetupForm({ domains, defaultDomainId }: InterviewSetupF
               </label>
             ))}
           </RadioGroup>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="flex flex-col gap-3">
         <Label className="text-sm font-medium">Mode</Label>

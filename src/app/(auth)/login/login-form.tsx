@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -91,6 +92,7 @@ function EmailPasswordForm({ mode }: { mode: AuthMode }) {
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<EmailPasswordValues>({
     resolver: zodResolver(EmailPasswordSchema),
@@ -163,11 +165,22 @@ function EmailPasswordForm({ mode }: { mode: AuthMode }) {
             <FormItem>
               <FormLabel>Password</FormLabel>
               <FormControl>
-                <Input
-                  type="password"
-                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                  {...field}
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                    className="pr-8"
+                    {...field}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute inset-y-0 right-0 flex items-center px-2 text-muted-foreground hover:text-foreground"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOffIcon className="size-4" /> : <EyeIcon className="size-4" />}
+                  </button>
+                </div>
               </FormControl>
               <FormMessage />
             </FormItem>

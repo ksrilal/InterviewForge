@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { NAV_ITEMS, ADMIN_NAV_ITEM } from "@/lib/nav-items";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Logo } from "@/components/layout/logo";
 import { logout } from "@/actions/auth.actions";
 
 interface NavBarProps {
@@ -17,8 +18,8 @@ export function NavBar({ isAdmin }: NavBarProps) {
 
   return (
     <header className="hidden md:flex sticky top-0 z-50 items-center justify-between border-b border-border bg-card/95 px-6 py-3 backdrop-blur supports-[backdrop-filter]:bg-card/80">
-      <Link href="/dashboard" className="font-semibold tracking-tight text-foreground">
-        InterviewForge
+      <Link href="/dashboard">
+        <Logo className="text-lg" />
       </Link>
       <nav>
         <ul className="flex items-center gap-1">

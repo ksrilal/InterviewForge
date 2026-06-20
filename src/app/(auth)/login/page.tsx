@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Logo } from "@/components/layout/logo";
 import { LoginForm } from "./login-form";
 
 interface LoginPageProps {
@@ -12,7 +13,9 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
     <div className="flex flex-1 items-center justify-center px-4">
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle className="text-center text-2xl tracking-tight">InterviewForge</CardTitle>
+          <CardTitle className="flex justify-center">
+            <Logo className="text-2xl" />
+          </CardTitle>
           <p className="text-center text-sm text-muted-foreground">
             Sign in to start practicing.
           </p>

@@ -45,6 +45,11 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   // Guards everything except the login page, the OAuth callback, static
-  // assets, and Next.js internals.
-  matcher: ["/((?!login|auth/callback|_next/static|_next/image|favicon.ico).*)"],
+  // assets, Next.js internals, and the App Router icon convention routes
+  // (icon.png/apple-icon.png) - those need to be publicly fetchable by the
+  // browser/OS before a user is ever authenticated (tab favicon, home
+  // screen icon), so gating them behind auth just breaks the icon entirely.
+  matcher: [
+    "/((?!login|auth/callback|_next/static|_next/image|favicon.ico|icon.png|apple-icon.png).*)",
+  ],
 };

@@ -98,9 +98,10 @@ type SetupValues = z.infer<typeof SetupSchema>;
 
 interface InterviewSetupFormProps {
   domains: DomainSummary[];
+  defaultDomainId?: string;
 }
 
-export function InterviewSetupForm({ domains }: InterviewSetupFormProps) {
+export function InterviewSetupForm({ domains, defaultDomainId }: InterviewSetupFormProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -108,12 +109,12 @@ export function InterviewSetupForm({ domains }: InterviewSetupFormProps) {
   const [, startLevelsTransition] = useTransition();
   const initSession = useInterviewSessionStore((s) => s.initSession);
 
-  const defaultDomain = domains.find((d) => !d.isCustom) ?? domains[0];
+  const fallbackDomain = domains.find((d) => !d.isCustom) ?? domains[0];
 
   const form = useForm<SetupValues>({
     resolver: zodResolver(SetupSchema),
     defaultValues: {
-      domainId: defaultDomain?.id ?? "",
+      domainId: defaultDomainId ?? fallbackDomain?.id ?? "",
       level: "senior",
       interviewType: "backend",
       mode: "practice",

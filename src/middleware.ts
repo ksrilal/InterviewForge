@@ -32,6 +32,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
+  // Forward the already-verified user id so the (app) layout doesn't have to
+  // make its own redundant auth.getUser() round-trip just to read it again -
+  // that second round-trip was adding visible latency before any UI painted.
+  // Must be set on the *request* headers (via the NextResponse.next options),
+  // not response.headers - the latter only reaches the browser, not the
+  // Server Component render that needs to read it back via headers().
+  request.headers.set("x-user-id", data.user.id);
+  response = NextResponse.next({ request });
   return response;
 }
 

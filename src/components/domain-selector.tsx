@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import type { DomainSummary } from "@/actions/domain.actions";
+import { setLastDomainCookie, type DomainSummary } from "@/actions/domain.actions";
 
 interface DomainSelectorProps {
   domains: DomainSummary[];
@@ -13,13 +13,21 @@ interface DomainSelectorProps {
 // Lets the dashboard/radar pages pivot their (domain-scoped) skill data
 // between domains - implemented as a URL param + router.push rather than
 // client state, since the underlying data is fetched server-side per domain.
+// Also persists the choice in a cookie so a fresh visit with no ?domain=
+// param (e.g. clicking "Home" in the nav) remembers it instead of always
+// resetting to the global domain.
 export function DomainSelector({ domains, selectedDomainId, basePath }: DomainSelectorProps) {
   const router = useRouter();
+
+  function handleChange(domainId: string) {
+    setLastDomainCookie(domainId);
+    router.push(`${basePath}?domain=${domainId}`);
+  }
 
   return (
     <Select
       value={selectedDomainId}
-      onValueChange={(v) => v && router.push(`${basePath}?domain=${v}`)}
+      onValueChange={(v) => v && handleChange(v)}
     >
       <SelectTrigger className="w-full sm:w-64">
         <SelectValue placeholder="Select a domain">

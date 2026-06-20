@@ -11,9 +11,10 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("ai_access_enabled, ai_request_count, ai_trial_limit")
+    .select("role, ai_access_enabled, ai_request_count, ai_trial_limit")
     .eq("id", user.id)
     .single();
+  const isAdmin = profile?.role === "admin";
 
   const aiProvider = process.env.ACTIVE_AI_PROVIDER ?? "—";
   const aiModel =
@@ -33,24 +34,26 @@ export default async function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>AI Provider</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-1 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Active provider</span>
-            <span className="capitalize text-foreground">{aiProvider}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Model</span>
-            <span className="text-foreground">{aiModel ?? "—"}</span>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Configured via environment variables, not editable here.
-          </p>
-        </CardContent>
-      </Card>
+      {isAdmin && (
+        <Card>
+          <CardHeader>
+            <CardTitle>AI Provider</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-1 text-sm">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Active provider</span>
+              <span className="capitalize text-foreground">{aiProvider}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Model</span>
+              <span className="text-foreground">{aiModel ?? "—"}</span>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Configured via environment variables, not editable here.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

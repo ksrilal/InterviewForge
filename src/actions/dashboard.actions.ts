@@ -12,10 +12,12 @@ export interface DashboardData {
   // Single page-level flag rather than per-row - recentSessions is now
   // domain-scoped, so every row already shares the same domain.
   isCustomDomain: boolean;
+  inProgressSession: { id: string; level: string; interviewType: string } | null;
   recentSessions: {
     id: string;
     level: string;
     interviewType: string;
+    status: "in_progress" | "completed" | "abandoned";
     overallScore: number | null;
     verdict: "pass" | "borderline" | "fail" | null;
   }[];
@@ -35,16 +37,26 @@ export async function getDashboardData(domainId: string): Promise<DashboardData>
     .single();
   const isCustomDomain = !!(domain as Pick<DomainRow, "owner_user_id"> | null)?.owner_user_id;
 
+  const { data: inProgress } = await supabase
+    .from("sessions")
+    .select("*")
+    .eq("domain_id", domainId)
+    .eq("status", "in_progress")
+    .order("started_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const inProgressRow = inProgress as SessionRow | null;
+
   const { data: sessions } = await supabase
     .from("sessions")
     .select("*")
     .eq("domain_id", domainId)
-    .eq("status", "completed")
     .order("started_at", { ascending: false })
-    .limit(5);
+    .limit(3);
 
   const sessionRows = (sessions ?? []) as SessionRow[];
-  const latestLevel = sessionRows[0]?.level ?? "senior";
+  const latestCompletedLevel = sessionRows.find((s) => s.status === "completed")?.level;
+  const latestLevel = inProgressRow?.level ?? latestCompletedLevel ?? "senior";
 
   const snapshots = await getLatestSkillSnapshots(domainId);
   const hasAnyData = snapshots.some((s) => s.sampleCount > 0);
@@ -62,10 +74,14 @@ export async function getDashboardData(domainId: string): Promise<DashboardData>
     readinessLevel: latestLevel,
     readinessStatus,
     isCustomDomain,
+    inProgressSession: inProgressRow
+      ? { id: inProgressRow.id, level: inProgressRow.level, interviewType: inProgressRow.interview_type }
+      : null,
     recentSessions: sessionRows.map((s) => ({
       id: s.id,
       level: s.level,
       interviewType: s.interview_type,
+      status: s.status,
       overallScore: s.overall_score,
       verdict: s.verdict,
     })),

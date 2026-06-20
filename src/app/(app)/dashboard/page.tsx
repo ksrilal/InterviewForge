@@ -6,7 +6,7 @@ import { SkillRadarChart } from "@/components/radar/skill-radar-chart";
 import { DomainSelector } from "@/components/domain-selector";
 import { getDashboardData } from "@/actions/dashboard.actions";
 import { getLatestSkillSnapshots } from "@/actions/radar.actions";
-import { listDomains } from "@/actions/domain.actions";
+import { listDomains, resolveDefaultDomainId } from "@/actions/domain.actions";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +17,7 @@ interface PageProps {
 export default async function DashboardPage({ searchParams }: PageProps) {
   const { domain } = await searchParams;
   const domains = await listDomains();
-  const defaultDomain = domains.find((d) => !d.isCustom) ?? domains[0];
-  const selectedDomainId = domain ?? defaultDomain?.id;
+  const selectedDomainId = await resolveDefaultDomainId(domains, domain);
 
   if (!selectedDomainId) {
     return (
@@ -42,6 +41,20 @@ export default async function DashboardPage({ searchParams }: PageProps) {
         level={dashboard.readinessLevel}
         status={dashboard.readinessStatus}
       />
+
+      {dashboard.inProgressSession && (
+        <Button
+          size="lg"
+          variant="outline"
+          nativeButton={false}
+          render={<Link href={`/interview/${dashboard.inProgressSession.id}`} />}
+        >
+          Continue Interview
+          {!dashboard.isCustomDomain
+            ? ` · ${dashboard.inProgressSession.level.replace("_", " ")} · ${dashboard.inProgressSession.interviewType.replace("_", " ")}`
+            : ` · ${dashboard.inProgressSession.level.replace("_", " ")}`}
+        </Button>
+      )}
 
       <Button size="lg" nativeButton={false} render={<Link href="/interview/new" />}>
         Start Interview

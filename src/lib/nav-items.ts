@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { LayoutDashboard, MessageSquareText, Radar, BookOpen, CalendarCheck, Settings, Users } from "lucide-react";
+import { LayoutDashboard, MessageSquareText, History, Radar, BookOpen, CalendarCheck, Settings, Users } from "lucide-react";
 
 export interface NavItem {
   href: string;
@@ -10,6 +10,7 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Home", icon: LayoutDashboard },
   { href: "/interview/new", label: "Interview", icon: MessageSquareText },
+  { href: "/sessions", label: "Sessions", icon: History },
   { href: "/radar", label: "Radar", icon: Radar },
   { href: "/questions", label: "Questions", icon: BookOpen },
   { href: "/plan", label: "Plan", icon: CalendarCheck },

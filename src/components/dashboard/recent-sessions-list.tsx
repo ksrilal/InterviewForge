@@ -5,6 +5,7 @@ interface RecentSession {
   id: string;
   level: string;
   interviewType: string;
+  status: "in_progress" | "completed" | "abandoned";
   overallScore: number | null;
   verdict: "pass" | "borderline" | "fail" | null;
 }
@@ -28,7 +29,7 @@ export function RecentSessionsList({ sessions, isCustomDomain }: RecentSessionsL
       {sessions.map((s) => (
         <li key={s.id}>
           <Link
-            href={`/interview/${s.id}/summary`}
+            href={s.status === "completed" ? `/interview/${s.id}/summary` : `/interview/${s.id}`}
             className="flex items-center justify-between rounded-md border border-border px-3 py-2.5 text-sm hover:bg-accent/40"
           >
             <span className="capitalize text-foreground">
@@ -36,8 +37,14 @@ export function RecentSessionsList({ sessions, isCustomDomain }: RecentSessionsL
               {!isCustomDomain ? ` · ${s.interviewType.replace("_", " ")}` : ""}
             </span>
             <span className="flex items-center gap-2 tabular-nums text-muted-foreground">
-              {s.overallScore != null ? Math.round(s.overallScore) : "—"}
-              {s.verdict && <Badge variant="outline">{VERDICT_ICON[s.verdict]}</Badge>}
+              {s.status !== "completed" ? (
+                <Badge variant="secondary">{s.status.replace("_", " ")}</Badge>
+              ) : (
+                <>
+                  {s.overallScore != null ? Math.round(s.overallScore) : "—"}
+                  {s.verdict && <Badge variant="outline">{VERDICT_ICON[s.verdict]}</Badge>}
+                </>
+              )}
             </span>
           </Link>
         </li>

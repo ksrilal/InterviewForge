@@ -1,6 +1,7 @@
 "use server";
 
 import { createHash, randomUUID } from "crypto";
+import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth/guard";
 import { getAIProvider } from "@/ai/provider";
@@ -8,6 +9,8 @@ import { checkAIQuota, recordAIUsage } from "@/lib/ai/usage-gate";
 import { extractText } from "@/lib/documents/extract-text";
 import type { ActionResult } from "@/types/domain";
 import type { DomainRow, KnowledgeSourceRow } from "@/lib/supabase/types";
+
+const LAST_DOMAIN_COOKIE = "interviewforge_last_domain";
 
 type SupabaseClient = Awaited<ReturnType<typeof requireUser>>["supabase"];
 
@@ -268,4 +271,47 @@ export async function deleteDomain(domainId: string): Promise<ActionResult<void>
   if (error) return { ok: false, error: error.message };
   revalidatePath("/questions");
   return { ok: true };
+}
+
+// Remembers the last domain picked in the DomainSelector so dashboard/radar
+// default back to it on a fresh visit (no ?domain= param) instead of always
+// falling back to the global domain. Read with getLastDomainCookie below;
+// callers must still verify the id is in the caller's current listDomains()
+// result, since the domain it points to may have been deleted since.
+export async function setLastDomainCookie(domainId: string): Promise<void> {
+  const cookieStore = await cookies();
+  cookieStore.set(LAST_DOMAIN_COOKIE, domainId, {
+    httpOnly: true,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 365,
+  });
+}
+
+export async function getLastDomainCookie(): Promise<string | null> {
+  const cookieStore = await cookies();
+  return cookieStore.get(LAST_DOMAIN_COOKIE)?.value ?? null;
+}
+
+// Shared by dashboard/radar pages: resolves which domain to show when the
+// page loads with no explicit ?domain= param. Falls back through the last
+// cookie-remembered domain, then the global domain, then whatever's first -
+// re-validating against the caller's actual `domains` list each time so a
+// remembered domain that's since been deleted is never used (it simply
+// won't be found, and the chain falls through to the next option).
+export async function resolveDefaultDomainId(
+  domains: DomainSummary[],
+  requestedDomainId?: string
+): Promise<string | undefined> {
+  if (requestedDomainId && domains.some((d) => d.id === requestedDomainId)) {
+    return requestedDomainId;
+  }
+
+  const lastDomainId = await getLastDomainCookie();
+  if (lastDomainId && domains.some((d) => d.id === lastDomainId)) {
+    return lastDomainId;
+  }
+
+  const globalDomain = domains.find((d) => !d.isCustom);
+  return globalDomain?.id ?? domains[0]?.id;
 }

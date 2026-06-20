@@ -43,8 +43,8 @@ Respond with a JSON object matching this exact shape (no markdown, no commentary
 {
   "overallScore": number (0-100),
   "dimensions": {
-    "accuracy": number, "depth": number, "completeness": number,
-    "practicality": number, "communication": number, "seniority": number
+    "accuracy": number (0-100), "depth": number (0-100), "completeness": number (0-100),
+    "practicality": number (0-100), "communication": number (0-100), "seniority": number (0-100)
   },
   "strengths": string[],
   "weaknesses": string[],

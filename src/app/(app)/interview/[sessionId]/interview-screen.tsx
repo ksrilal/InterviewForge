@@ -143,25 +143,38 @@ export function InterviewScreen({
         )}
       </div>
 
-      {currentQuestion && (
-        <QuestionCard
-          prompt={currentQuestion.prompt}
-          category={currentQuestion.followUpDepth === 0 ? initialCategory ?? undefined : undefined}
-          difficulty={currentQuestion.followUpDepth === 0 ? initialDifficulty ?? undefined : undefined}
-        />
-      )}
+      {status === "session_complete" ? (
+        // Ending the session still needs to await endSession() before the
+        // router.push to /summary resolves - without this branch, status
+        // falls through every other check below and the screen sat on the
+        // bare last question with no input or evaluation, looking frozen.
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-center">
+          <div className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
+          <p className="text-sm text-muted-foreground">Wrapping up your results…</p>
+        </div>
+      ) : (
+        <>
+          {currentQuestion && (
+            <QuestionCard
+              prompt={currentQuestion.prompt}
+              category={currentQuestion.followUpDepth === 0 ? initialCategory ?? undefined : undefined}
+              difficulty={currentQuestion.followUpDepth === 0 ? initialDifficulty ?? undefined : undefined}
+            />
+          )}
 
-      {(status === "answering" || status === "evaluating") && (
-        <AnswerInput
-          value={draftAnswer}
-          onChange={setDraftAnswer}
-          onSubmit={handleSubmit}
-          disabled={status === "evaluating"}
-          isPending={isPending || status === "evaluating"}
-        />
-      )}
+          {(status === "answering" || status === "evaluating") && (
+            <AnswerInput
+              value={draftAnswer}
+              onChange={setDraftAnswer}
+              onSubmit={handleSubmit}
+              disabled={status === "evaluating"}
+              isPending={isPending || status === "evaluating"}
+            />
+          )}
 
-      {evaluationError && <p className="text-sm text-destructive">{evaluationError}</p>}
+          {evaluationError && <p className="text-sm text-destructive">{evaluationError}</p>}
+        </>
+      )}
 
       {status === "showing_result" && lastEvaluation && (
         <div className="flex flex-col gap-4">

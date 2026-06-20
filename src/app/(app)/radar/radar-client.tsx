@@ -3,7 +3,13 @@
 import { useEffect, useState, useTransition } from "react";
 import { SkillRadarChart } from "@/components/radar/skill-radar-chart";
 import { SkillTrendChart } from "@/components/radar/skill-trend-chart";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { getSkillTrend } from "@/actions/radar.actions";
 import type { SkillSnapshotSummary } from "@/actions/radar.actions";
 
@@ -58,15 +64,20 @@ export function RadarClient({ snapshots, domainId }: RadarClientProps) {
       <SkillRadarChart data={snapshots.map((s) => ({ axis: s.axis, rollingAverage: s.rollingAverage }))} />
 
       <div className="flex flex-col gap-3">
-        <Tabs value={selectedAxis} onValueChange={(v) => v && setSelectedAxis(v)}>
-          <TabsList className="flex-wrap h-auto">
+        <Select value={selectedAxis} onValueChange={(v) => v && setSelectedAxis(v)}>
+          <SelectTrigger className="w-full sm:w-64">
+            <SelectValue placeholder="Select a skill">
+              {(value: string | null) => (value ? axisLabel(value) : "Select a skill")}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
             {snapshots.map((s) => (
-              <TabsTrigger key={s.axis} value={s.axis} className="text-xs">
+              <SelectItem key={s.axis} value={s.axis}>
                 {axisLabel(s.axis)}
-              </TabsTrigger>
+              </SelectItem>
             ))}
-          </TabsList>
-        </Tabs>
+          </SelectContent>
+        </Select>
         <SkillTrendChart data={trend} />
       </div>
 

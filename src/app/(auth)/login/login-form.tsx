@@ -27,6 +27,10 @@ const EmailPasswordSchema = z.object({
 type EmailPasswordValues = z.infer<typeof EmailPasswordSchema>;
 type AuthMode = "signin" | "signup";
 
+// Google OAuth is temporarily hidden from the login screen (not removed -
+// see handleGoogleLogin below) until the provider is fully configured.
+const GOOGLE_SIGN_IN_ENABLED = false;
+
 export function LoginForm() {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [googleError, setGoogleError] = useState<string | null>(null);
@@ -50,21 +54,25 @@ export function LoginForm() {
 
   return (
     <div className="flex flex-col gap-4 w-full">
-      <Button
-        onClick={handleGoogleLogin}
-        disabled={isGoogleLoading}
-        variant="outline"
-        className="w-full"
-      >
-        {isGoogleLoading ? "Redirecting..." : "Continue with Google"}
-      </Button>
-      {googleError && <p className="text-sm text-destructive">{googleError}</p>}
+      {GOOGLE_SIGN_IN_ENABLED && (
+        <>
+          <Button
+            onClick={handleGoogleLogin}
+            disabled={isGoogleLoading}
+            variant="outline"
+            className="w-full"
+          >
+            {isGoogleLoading ? "Redirecting..." : "Continue with Google"}
+          </Button>
+          {googleError && <p className="text-sm text-destructive">{googleError}</p>}
 
-      <div className="flex items-center gap-2">
-        <Separator className="flex-1" />
-        <span className="text-xs text-muted-foreground">or</span>
-        <Separator className="flex-1" />
-      </div>
+          <div className="flex items-center gap-2">
+            <Separator className="flex-1" />
+            <span className="text-xs text-muted-foreground">or</span>
+            <Separator className="flex-1" />
+          </div>
+        </>
+      )}
 
       <Tabs value={mode} onValueChange={(v) => setMode(v as AuthMode)}>
         <TabsList className="grid grid-cols-2 w-full">
@@ -98,11 +106,14 @@ function EmailPasswordForm({ mode }: { mode: AuthMode }) {
 
     if (mode === "signin") {
       const { error: signInError } = await supabase.auth.signInWithPassword(values);
-      setIsPending(false);
       if (signInError) {
+        setIsPending(false);
         setError(signInError.message);
         return;
       }
+      // Keep the pending state on through navigation - the dashboard does
+      // its own data fetching before it paints, so clearing isPending here
+      // would re-enable the button while the screen still looks frozen.
       router.push("/dashboard");
       router.refresh();
       return;

@@ -376,7 +376,10 @@ async function moveToNewTopic(
     .map((r) => (r as { question_id: string | null }).question_id)
     .filter((id): id is string => !!id);
 
-  const typeMixForNext = config.typeSequence[currentRootCount];
+  // Same reasoning as startSession: mock mode's type sequence assumes the
+  // built-in domain's broad question_type coverage, which custom domains
+  // rarely have - always use the domain-wide pick for those instead.
+  const typeMixForNext = isCustomDomain ? undefined : config.typeSequence[currentRootCount];
   const question = typeMixForNext
     ? await pickQuestionByTypeMix(sessionRow.domain_id, sessionRow.level, [typeMixForNext], excludeIds)
     : isCustomDomain

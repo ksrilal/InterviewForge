@@ -1,5 +1,5 @@
 import { getLatestSkillSnapshots } from "@/actions/radar.actions";
-import { listDomains } from "@/actions/domain.actions";
+import { listDomains, resolveDefaultDomainId } from "@/actions/domain.actions";
 import { DomainSelector } from "@/components/domain-selector";
 import { RadarClient } from "./radar-client";
 
@@ -12,8 +12,7 @@ interface PageProps {
 export default async function RadarPage({ searchParams }: PageProps) {
   const { domain } = await searchParams;
   const domains = await listDomains();
-  const defaultDomain = domains.find((d) => !d.isCustom) ?? domains[0];
-  const selectedDomainId = domain ?? defaultDomain?.id;
+  const selectedDomainId = await resolveDefaultDomainId(domains, domain);
 
   if (!selectedDomainId) {
     return (

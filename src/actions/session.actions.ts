@@ -66,7 +66,12 @@ export async function startSession(
 
   const sessionRow = session as SessionRow;
 
-  const firstTypeMix = config.typeSequence[0];
+  // Mock mode's typeSequence (theory/debugging/architecture/...) assumes the
+  // built-in Software Engineering domain's broad question_type coverage - a
+  // custom domain's AI-generated questions rarely span that same variety, so
+  // forcing the type filter there just fails to find anything. Custom
+  // domains always use the domain-wide pick regardless of mock mode.
+  const firstTypeMix = isCustomDomain ? undefined : config.typeSequence[0];
   const question = firstTypeMix
     ? await pickQuestionByTypeMix(domainId, level, [firstTypeMix], [])
     : isCustomDomain
@@ -74,6 +79,10 @@ export async function startSession(
       : await pickRootQuestion(domainId, level, interviewType, []);
 
   if (!question) {
+    // Clean up the session row we just created - without this, a failed
+    // first-question pick (e.g. an empty domain) left an orphaned
+    // in_progress session with no questions, visible forever in /sessions.
+    await supabase.from("sessions").delete().eq("id", sessionRow.id);
     return { ok: false, error: "No questions available for this domain/level/type combination." };
   }
 
@@ -91,6 +100,7 @@ export async function startSession(
     .single();
 
   if (sqError || !sessionQuestion) {
+    await supabase.from("sessions").delete().eq("id", sessionRow.id);
     return { ok: false, error: sqError?.message ?? "Failed to create first question." };
   }
 
@@ -215,4 +225,20 @@ export async function abandonSession(sessionId: string): Promise<void> {
     .update({ status: "abandoned", ended_at: new Date().toISOString() })
     .eq("id", sessionId);
   revalidatePath("/dashboard");
+}
+
+// session_questions/answers/skill_score_events all cascade-delete from
+// sessions (see 0001_init.sql), so deleting the session row alone removes
+// its full history. RLS already scopes "sessions" to the caller's own rows
+// (0004_multi_tenant_foundation.sql), so this can't touch another user's
+// session even without an explicit user_id filter here.
+export async function deleteSession(sessionId: string): Promise<ActionResult<void>> {
+  const { supabase } = await requireUser();
+  const { error } = await supabase.from("sessions").delete().eq("id", sessionId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/sessions");
+  revalidatePath("/dashboard");
+  revalidatePath("/radar");
+  return { ok: true };
 }
